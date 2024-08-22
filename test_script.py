@@ -1,7 +1,10 @@
-import numpy as np 
+import numpy as np
+import pandas as pd 
 import torch
 import matplotlib.pyplot as plt
 import random
+from utility import make_time_bins, compute_l1_difference
+from model import CopulaMLP
 
 np.random.seed(0)
 torch.manual_seed(0)
@@ -67,10 +70,9 @@ if __name__ == "__main__":
     from distributions import Weibull_log_linear, Weibull_nonlinear, EXP_nonlinear
     from utility import kendall_tau_to_theta
     
-    k_tau = 0.25
-
+    k_tau = 0 # 0.25
     dl = CompetingRiskSyntheticDataLoader().load_data(data_cfg, k_tau=k_tau, copula_name="frank",
-                                                      linear=False, device=device, dtype=dtype)
+                                                      linear=True, device=device, dtype=dtype)
     train_dict, valid_dict, test_dict = dl.split_data(train_size=0.7, valid_size=0.1, test_size=0.2,
                                                       random_state=0)
     
@@ -91,7 +93,10 @@ if __name__ == "__main__":
     print(f"Goal theta: {theta_dgp}")
     eps = 1e-4
     
-    #remove the comment to check the percentage of each event 
+    time_bins = make_time_bins(train_dict['T'], event=None, dtype=dtype).to(device)
+    time_bins = torch.cat((torch.tensor([0]).to(device), time_bins))
+    
+    #remove the comment to check the percentage of each event
     #plt.hist(train_dict['E'])
     #plt.show()
     #assert 0
@@ -105,95 +110,37 @@ if __name__ == "__main__":
     copula = Nested_Convex_Copula(['fr'], ['fr'], [2.0], [2.0], eps=1e-3, dtype=dtype, device=device)
     #copula = Clayton_Triple(theta=2.0, eps=1e-3, dtype=dtype, device=device)
     
-    #indep_model1 = Weibull_log_linear(n_features, device=device)
-    #indep_model2 = Weibull_log_linear(n_features, device=device)
-    #indep_model3 = Weibull_log_linear(n_features, device=device)
-    indep_model1 = Weibull_nonlinear(n_features, n_hidden=8, risk_function=torch.nn.ReLU(), device=device, dtype=dtype)
-    indep_model2 = Weibull_nonlinear(n_features, n_hidden=8, risk_function=torch.nn.ReLU(), device=device, dtype=dtype)
-    indep_model3 = Weibull_nonlinear(n_features, n_hidden=8, risk_function=torch.nn.ReLU(), device=device, dtype=dtype)
+    # Make and train model
+    n_epochs = 1000
+    n_dists = 1
+    batch_size = 128
+    layers = [32]
+    lr_dict = {'network': 0.001, 'copula': 0.001} # 0.001
+    model = CopulaMLP(n_features, layers=layers, n_events=n_events+1,
+                      n_dists=n_dists, copula=copula, dgps=dgps,
+                      time_bins=time_bins, device=device)
+    model.fit(train_dict, valid_dict, lr_dict=lr_dict, n_epochs=n_epochs,
+              patience=50, batch_size=batch_size, verbose=True)
+
+    # Predict
+    all_preds = []
+    for i in range(n_events):
+        model_preds = model.predict(test_dict['X'].to(device), time_bins, risk=i+1)
+        model_preds = pd.DataFrame(model_preds, columns=time_bins.cpu().numpy())
+        all_preds.append(model_preds)
     
-    indep_model1.enable_grad()
-    indep_model2.enable_grad()
-    indep_model3.enable_grad()
-    copula.enable_grad()
-
-    #training loop
-    optimizer = torch.optim.Adam([{"params": indep_model1.parameters(), "lr": 1e-3, "weight_decay":0.001},
-                                  {"params": indep_model2.parameters(), "lr": 1e-3, "weight_decay":0.001},
-                                  {"params": indep_model3.parameters(), "lr": 1e-3, "weight_decay":0.001},
-                                  {"params": copula.parameters(), "lr": 1e-3, "weight_decay":0.001}])
-    n_epochs = 50000
-    min_delta = 0.001
-    best_val_loss = torch.tensor(float('inf')).to(device)
-    epochs_no_improve = 0
-    patience = 2500
-    #copula = None
+    # Compute Survival-L1
+    for event_id, surv_preds in enumerate(all_preds):
+        n_samples = test_dict['X'].shape[0]
+        truth_preds = torch.zeros((n_samples, time_bins.shape[0]), device=device)
+        for i in range(time_bins.shape[0]):
+            truth_preds[:,i] = dgps[event_id+1].survival(time_bins[i], test_dict['X'].to(device))
+        model_preds_th = torch.tensor(surv_preds.values, device=device, dtype=dtype)
+        survival_l1 = float(compute_l1_difference(truth_preds, model_preds_th,
+                                                  n_samples, steps=time_bins))
+        print(f'{event_id+1}: ' + f'{survival_l1}')
     
-    for i in range(n_epochs):
-        optimizer.zero_grad()
-        loss = loss_triple(indep_model1, indep_model2, indep_model3, train_dict, copula)
-        loss.backward()
-        
-        copula_grad_multiplier = 1.0
-        copula_grad_clip = 1.0
-        if (copula_grad_multiplier) and (copula is not None):
-            if isinstance(copula, Nested_Convex_Copula):
-                for p in copula.parameters()[:-2]:
-                    p.grad = (p.grad * copula_grad_multiplier).clip(-1 * copula_grad_clip, 1 *copula_grad_clip)
-            else:
-                for p in copula.parameters():
-                    p.grad = (p.grad * copula_grad_multiplier).clip(-1 * copula_grad_clip, 1 *copula_grad_clip)
-                     
-        optimizer.step()
-        
-        if copula is not None:
-            if isinstance(copula, Nested_Convex_Copula):
-                for p in copula.parameters()[-2]:
-                    if p < 0.01:
-                        with torch.no_grad():
-                            p = torch.clamp(p, 0.01, 100)
-            else:
-                for p in copula.parameters():
-                    if p < 0.01:
-                        with torch.no_grad():
-                            p = torch.clamp(p, 0.01, 100)
-        if i % 100 == 0:
-            val_loss = loss_triple(indep_model1, indep_model2, indep_model3, valid_dict, copula)
-            if copula is not None:
-                if isinstance(copula, Nested_Convex_Copula):
-                    params = [np.around(float(param), 5) for param in copula.parameters()[:-2]]
-                else:
-                    params = [np.around(float(param), 5) for param in copula.parameters()]
-                print(i, "/", n_epochs, "train_loss: ", round(loss.item(), 4),
-                    "val_loss: ", round(best_val_loss.item(), 4),
-                    "copula: ", params)
-            else:
-                print(i, "/", n_epochs, "train_loss: ", round(loss.item(), 4),
-                    "val_loss: ", round(val_loss.item(), 4),
-                    "min_val_loss: ", round(best_val_loss.item(), 4))
-
-            
-        if val_loss < best_val_loss - min_delta:
-            best_val_loss = val_loss
-            epochs_no_improve = 0
-            if copula is not None:
-                best_theta = [p.detach().clone().cpu() for p in copula.parameters()]
-        else:
-            epochs_no_improve += 1
-            
-        if epochs_no_improve >= patience:
-            print(f"Early stopping at iteration {i}, best val loss: {best_val_loss}")
-            break
-
-    print("###############################################################")
-    #NLL of all of the events together
-    print(loss_triple(indep_model1, indep_model2, indep_model3, test_dict, copula))
-    #check the dgp performance
-    #copula.theta = torch.tensor([theta_dgp], device=device)
+    # Print DGP L1
     copula = Clayton_Triple(theta=theta_dgp, eps=1e-3, dtype=dtype, device=device)
     print(loss_triple(dgp1, dgp2, dgp3, test_dict, copula))
     
-    from utility import surv_diff
-    print(surv_diff(dgp1, indep_model1, test_dict['X'], 200))
-    print(surv_diff(dgp2, indep_model2, test_dict['X'], 200))
-    print(surv_diff(dgp3, indep_model3, test_dict['X'], 200))

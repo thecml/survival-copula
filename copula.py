@@ -91,7 +91,7 @@ class Frank_Bivariate:
     
 
 class Convex_bivariate:
-    def __init__(self, copulas=['cl', 'fr'], thetas=[2.0, 2.0], eps=1e-3, dtype=torch.float32, device='cpu'):
+    def __init__(self, copulas=['cl', 'fr'], thetas=[2.0, 2.0], eps=1e-3, dtype=torch.float64, device='cpu'):
         self.copulas = []
         self.device = device
         self.n_copula = len(copulas)
@@ -148,7 +148,7 @@ class Convex_bivariate:
 
 
 class Nested_Convex_Copula:
-    def __init__(self, child_copulas, parent_copulas, child_thetas, parent_thetas, eps=1e-3, dtype=torch.float32, device='cpu'):
+    def __init__(self, child_copulas, parent_copulas, child_thetas, parent_thetas, eps=1e-3, dtype=torch.float64, device='cpu'):
         self.parent_copula = Convex_bivariate(parent_copulas, parent_thetas, eps=eps, dtype=dtype, device=device)
         self.child_copula = Convex_bivariate(child_copulas, child_thetas, eps=eps, dtype=dtype, device=device)
         self.eps = eps
@@ -316,7 +316,7 @@ if __name__ == "__main__":
     v = torch.from_numpy(v).reshape(-1,1)
     w = torch.from_numpy(w).reshape(-1,1)
     U = torch.cat([u,v,w], axis=1)
-    copula = Nested_Convex_Copula(['fr'], ['fr'], [1], [1], 1e-3, dtype=torch.float32, device='cpu')
+    copula = Nested_Convex_Copula(['fr'], ['fr'], [1], [1], 1e-3, dtype=torch.float64, device='cpu')
 
         
     for p in copula.parameters():

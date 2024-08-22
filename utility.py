@@ -1,8 +1,70 @@
 import torch
 import numpy as np
 import pandas as pd
+import math
 from sklearn.utils import shuffle
 from skmultilearn.model_selection import iterative_train_test_split
+from typing import Union, Tuple, Optional, List
+
+Numeric = Union[float, int, bool]
+NumericArrayLike = Union[List[Numeric], Tuple[Numeric], np.ndarray, pd.Series, pd.DataFrame, torch.Tensor]
+
+def compute_l1_difference(truth_preds, model_preds, n_samples, steps, device='cpu'):
+    t_m = steps.max().to(device)
+    surv1 = truth_preds.to(device)
+    surv2 = model_preds.to(device)
+    steps = steps.to(device)
+    integ = torch.sum(torch.diff(torch.cat([torch.zeros(1, device=device), steps])) * torch.abs(surv1 - surv2))
+    result = (integ / t_m / n_samples).detach().cpu().numpy()
+    return result
+
+def make_time_bins(
+        times: NumericArrayLike,
+        num_bins: Optional[int] = None,
+        use_quantiles: bool = True,
+        event: Optional[NumericArrayLike] = None,
+        dtype=torch.float64
+) -> torch.Tensor:
+    """
+    Courtesy of https://ieeexplore.ieee.org/document/10158019
+    
+    Creates the bins for survival time discretisation.
+
+    By default, sqrt(num_observation) bins corresponding to the quantiles of
+    the survival time distribution are used, as in https://github.com/haiderstats/MTLR.
+
+    Parameters
+    ----------
+    times
+        Array or tensor of survival times.
+    num_bins
+        The number of bins to use. If None (default), sqrt(num_observations)
+        bins will be used.
+    use_quantiles
+        If True, the bin edges will correspond to quantiles of `times`
+        (default). Otherwise, generates equally-spaced bins.
+    event
+        Array or tensor of event indicators. If specified, only samples where
+        event == 1 will be used to determine the time bins.
+
+    Returns
+    -------
+    torch.Tensor
+        Tensor of bin edges.
+    """
+    # TODO this should handle arrays and (CUDA) tensors
+    if event is not None:
+        times = times[event == 1]
+    if num_bins is None:
+        num_bins = math.ceil(math.sqrt(len(times)))
+    if use_quantiles:
+        # NOTE we should switch to using torch.quantile once it becomes
+        # available in the next version
+        bins = np.unique(np.quantile(times, np.linspace(0, 1, num_bins)))
+    else:
+        bins = np.linspace(times.min(), times.max(), num_bins)
+    bins = torch.tensor(bins, dtype=dtype)
+    return bins
 
 def Survival(model, estimate, x, steps=200):
     device = x.device
