@@ -93,7 +93,7 @@ if __name__ == "__main__":
     print(f"Goal theta: {theta_dgp}")
     eps = 1e-4
     
-    time_bins = make_time_bins(train_dict['T'], event=None, dtype=dtype).to(device)
+    time_bins = make_time_bins(train_dict['T'].cpu(), event=None, dtype=dtype).to(device)
     time_bins = torch.cat((torch.tensor([0]).to(device), time_bins))
     
     #remove the comment to check the percentage of each event

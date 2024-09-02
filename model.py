@@ -7,7 +7,7 @@ import numpy as np
 from copula import Nested_Convex_Copula
 from utility import compute_l1_difference
 
-from mensa.loss import conditional_weibull_loss, conditional_weibull_loss_multi
+from loss import conditional_weibull_loss
 
 def create_representation(inputdim, layers, activation, bias=False):
     if activation == 'ReLU6':
