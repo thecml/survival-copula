@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import random
 from utility import make_time_bins, compute_l1_difference
 from model import CopulaMLP
+from loss import loss_DGP_Triple
 
 np.random.seed(0)
 torch.manual_seed(0)
@@ -87,7 +88,14 @@ if __name__ == "__main__":
     dgp1 = dgps[0]
     dgp2 = dgps[1]
     dgp3 = dgps[2]
-
+    print(f'minimum possibe loss train: {loss_DGP_Triple(train_dict, dgp1, dgp2, dgp3, None)}')#tau = 0 --> copula None
+    print(f'minimum possibe loss val: {loss_DGP_Triple(valid_dict, dgp1, dgp2, dgp3, None)}')#tau = 0 --> copula None
+    print(f'minimum possibe loss test: {loss_DGP_Triple(test_dict, dgp1, dgp2, dgp3, None)}')#tau = 0 --> copula None
+    copula_test = Nested_Convex_Copula(['fr'], ['fr'], [0.01], [0.01], eps=1e-3, dtype=dtype, device=device)
+    print(f'minimum possibe loss with copula train: {loss_DGP_Triple(train_dict, dgp1, dgp2, dgp3, copula_test)}')#tau = 0 --> best thing model can achieve
+    print(f'minimum possibe loss with copula val: {loss_DGP_Triple(valid_dict, dgp1, dgp2, dgp3, copula_test)}')#tau = 0 --> best thing model can achieve
+    print(f'minimum possibe loss with copula test: {loss_DGP_Triple(test_dict, dgp1, dgp2, dgp3, copula_test)}')#tau = 0 --> best thing model can achieve
+    
     copula_dgp = 'clayton'
     theta_dgp = kendall_tau_to_theta(copula_dgp, k_tau)
     print(f"Goal theta: {theta_dgp}")
@@ -97,7 +105,7 @@ if __name__ == "__main__":
     time_bins = torch.cat((torch.tensor([0]).to(device), time_bins))
     
     #remove the comment to check the percentage of each event
-    #plt.hist(train_dict['E'])
+    #plt.hist(train_dict['E'].cpu().numpy())
     #plt.show()
     #assert 0
 
@@ -107,20 +115,20 @@ if __name__ == "__main__":
     #copula = Frank(torch.tensor([copula_start_point]),eps, DEVICE)
     #copula = Clayton(torch.tensor([copula_start_point]),eps, DEVICE)
     #copula = NestedClayton(torch.tensor([copula_start_point]),torch.tensor([copula_start_point]),eps,eps, DEVICE)
-    copula = Nested_Convex_Copula(['fr'], ['fr'], [2.0], [2.0], eps=1e-3, dtype=dtype, device=device)
+    copula = Nested_Convex_Copula(['fr'], ['fr'], [0.01], [0.01], eps=1e-3, dtype=dtype, device=device)
     #copula = Clayton_Triple(theta=2.0, eps=1e-3, dtype=dtype, device=device)
     
     # Make and train model
-    n_epochs = 1000
+    n_epochs = 10000
     n_dists = 1
-    batch_size = 128
-    layers = [32]
-    lr_dict = {'network': 0.001, 'copula': 0.001} # 0.001
+    batch_size = 5000
+    layers = [128,256]
+    lr_dict = {'network': 0.0001, 'copula': 0.001} # 0.001
     model = CopulaMLP(n_features, layers=layers, n_events=n_events+1,
                       n_dists=n_dists, copula=copula, dgps=dgps,
                       time_bins=time_bins, device=device)
     model.fit(train_dict, valid_dict, lr_dict=lr_dict, n_epochs=n_epochs,
-              patience=50, batch_size=batch_size, verbose=True)
+              patience=1000, batch_size=batch_size, verbose=True, weight_decay=0.01)
 
     # Predict
     all_preds = []

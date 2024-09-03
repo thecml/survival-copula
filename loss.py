@@ -1,8 +1,8 @@
 import torch
 from torch import nn
 
-def safe_log(x):
-    return torch.log(x+1e-6*(x<1e-6))
+def safe_log(x,eps=1e-6):
+    return torch.log(x+eps*(x<eps))
 
 # Loss function for single-event and competing risks
 def conditional_weibull_loss(model, x, t, E, elbo=True, copula=None):
@@ -85,4 +85,36 @@ def conditional_weibull_loss(model, x, t, E, elbo=True, copula=None):
         e2 = (E == 0) * 1.0
         loss = torch.sum(e1 * f[:,0]) + torch.sum(e2 * s[:,0]) 
         loss = -loss/E.shape[0]
+    return loss
+
+
+def loss_DGP_Triple(data_dict, dgp1, dgp2, dgp3, copula):
+    x = data_dict['X']
+    t = data_dict['T']
+    e = data_dict['E']
+    f1 = dgp1.PDF(t, x)
+    f2 = dgp2.PDF(t, x)
+    f3 = dgp3.PDF(t, x)
+    s1 = dgp1.survival(t, x)
+    s2 = dgp2.survival(t, x)
+    s3 = dgp3.survival(t, x)
+    if copula is None:
+        p1 = safe_log(f1) + safe_log(s2) + safe_log(s3)
+        p2 = safe_log(s1) + safe_log(f2) + safe_log(s3)
+        p3 = safe_log(s1) + safe_log(s2) + safe_log(f3)
+        e1 = (e == 0) * 1.0
+        e2 = (e == 1) * 1.0
+        e3 = (e == 2) * 1.0
+        loss = torch.sum(e1 * p1) + torch.sum(e2 * p2) + torch.sum(e3 * p3)
+        loss = -loss/e.shape[0]
+    else:
+        S = torch.concat([s1.reshape(-1,1), s2.reshape(-1,1), s3.reshape(-1,1)], axis=1) .clamp(0.001,0.999)
+        p1 = safe_log(f1) + safe_log(copula.conditional_cdf("u", S))
+        p2 = safe_log(f2) + safe_log(copula.conditional_cdf("v", S))
+        p3 = safe_log(f3) + safe_log(copula.conditional_cdf("w", S))
+        e1 = (e == 0) * 1.0
+        e2 = (e == 1) * 1.0
+        e3 = (e == 2) * 1.0
+        loss = torch.sum(e1 * p1) + torch.sum(e2 * p2) + torch.sum(e3 * p3)
+        loss = -loss/e.shape[0]
     return loss

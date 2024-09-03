@@ -184,7 +184,6 @@ class CompetingRiskSyntheticDataLoader(BaseDataLoader):
                                       t3_times.reshape(-1,1)], axis=1)
         event_indicators = np.argmin(event_times, axis=1)
         observed_times = event_times[np.arange(event_times.shape[0]), event_indicators]
-        
         columns = [f'X{i}' for i in range(n_features)]
         self.X = pd.DataFrame(X.cpu(), columns=columns)
         self.y_e = event_indicators

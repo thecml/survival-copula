@@ -150,7 +150,7 @@ class DGP_EXP_nonlinear(DGP_Exp_linear):
         risks = torch.matmul(self.hidden_layer(torch.matmul(x, self.beta)), self.coeff)
         return self.bh * torch.exp(risks)
 
-class DGP_Weibull_linear:
+class DGP_Weibull_linear: #This is PH implementation 
     def __init__(self, n_features, alpha: float, gamma: float, device="cpu", dtype=torch.float64):
         self.alpha = torch.tensor([alpha], device=device).type(dtype)
         self.gamma = torch.tensor([gamma], device=device).type(dtype)
