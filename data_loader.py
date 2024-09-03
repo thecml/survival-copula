@@ -104,7 +104,7 @@ class SingleEventSyntheticDataLoader(BaseDataLoader):
         self.y_e = event_indicators
         self.y_t = observed_times
         self.dgps = [dgp1, dgp2]
-        self.n_events = 1
+        self.n_events = 2
         
         return self
     
@@ -144,7 +144,6 @@ class CompetingRiskSyntheticDataLoader(BaseDataLoader):
         gamma_e1 = data_config['gamma_e1']
         gamma_e2 = data_config['gamma_e2']
         gamma_e3 = data_config['gamma_e3']
-        n_hidden = data_config['n_hidden']
         n_samples = data_config['n_samples']
         n_features = data_config['n_features']
         
@@ -155,12 +154,9 @@ class CompetingRiskSyntheticDataLoader(BaseDataLoader):
             dgp2 = DGP_Weibull_linear(n_features, alpha_e2, gamma_e2, device, dtype)
             dgp3 = DGP_Weibull_linear(n_features, alpha_e3, gamma_e3, device, dtype)
         else:
-            dgp1 = DGP_Weibull_nonlinear(n_features, n_hidden=n_hidden, alpha=[alpha_e1]*n_hidden,
-                                         gamma=[gamma_e1]*n_hidden, device=device, dtype=dtype)
-            dgp2 = DGP_Weibull_nonlinear(n_features, n_hidden=n_hidden, alpha=[alpha_e2]*n_hidden,
-                                         gamma=[gamma_e2]*n_hidden, device=device, dtype=dtype)
-            dgp3 = DGP_Weibull_nonlinear(n_features, n_hidden=n_hidden, alpha=[alpha_e3]*n_hidden,
-                                         gamma=[gamma_e3]*n_hidden, device=device, dtype=dtype)
+            dgp1 = DGP_Weibull_nonlinear(n_features, alpha=alpha_e1, gamma=gamma_e1, device=device, dtype=dtype)
+            dgp2 = DGP_Weibull_nonlinear(n_features, alpha=alpha_e2, gamma=gamma_e2, device=device, dtype=dtype)
+            dgp3 = DGP_Weibull_nonlinear(n_features, alpha=alpha_e3, gamma=gamma_e3, device=device, dtype=dtype)
         
         if copula_name is None or k_tau == 0:
             rng = np.random.default_rng(0)
@@ -175,6 +171,7 @@ class CompetingRiskSyntheticDataLoader(BaseDataLoader):
             v = torch.from_numpy(v).type(dtype).reshape(-1,1)
             w = torch.from_numpy(w).type(dtype).reshape(-1,1)
             uvw = torch.cat([u,v,w], axis=1).to(device)
+            
         t1_times = dgp1.rvs(X, uvw[:,0]).cpu()
         t2_times = dgp2.rvs(X, uvw[:,1]).cpu()
         t3_times = dgp3.rvs(X, uvw[:,2]).cpu()
@@ -192,7 +189,7 @@ class CompetingRiskSyntheticDataLoader(BaseDataLoader):
         self.y_t2 = t2_times
         self.y_t3 = t3_times
         
-        self.n_events = 2
+        self.n_events = 3
         self.dgps = [dgp1, dgp2, dgp3]
         
         return self

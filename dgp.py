@@ -1,9 +1,12 @@
-import torch
 from typing import List
 import torch
+import math
 
 def LOG(x):
     return torch.log(x+1e-20*(x<1e-20))
+
+def sine(x, coeff):
+    return 2 * torch.sin(torch.matmul(x, coeff) * math.pi + 0.1)
 
 class DGP_LogNormal_linear:
     # Note this is the LogNormal model, not the LogNormal CoxPH model
@@ -150,7 +153,7 @@ class DGP_EXP_nonlinear(DGP_Exp_linear):
         risks = torch.matmul(self.hidden_layer(torch.matmul(x, self.beta)), self.coeff)
         return self.bh * torch.exp(risks)
 
-class DGP_Weibull_linear: #This is PH implementation 
+class DGP_Weibull_linear: # This is PH implementation 
     def __init__(self, n_features, alpha: float, gamma: float, device="cpu", dtype=torch.float64):
         self.alpha = torch.tensor([alpha], device=device).type(dtype)
         self.gamma = torch.tensor([gamma], device=device).type(dtype)
@@ -177,17 +180,13 @@ class DGP_Weibull_linear: #This is PH implementation
     def rvs(self, x, u):
         return ((-LOG(u)/torch.exp(torch.matmul(x, self.coeff)))**(1/self.gamma))*self.alpha
 
-import math
-def sine(x):
-    return 2 * torch.sin(x * math.pi + 0.1)
-
-class DGP_Weibull_nonlinear:
-    def __init__(self, n_features, n_hidden, alpha: List[float], gamma: List[float],
-                 risk_function=sine, device='cpu', dtype=torch.float64):
-        self.alpha = torch.tensor(alpha, device=device).type(dtype)
-        self.gamma = torch.tensor(gamma, device=device).type(dtype)
-        self.beta = torch.rand((n_features, n_hidden), device=device).type(dtype)
-        self.hidden_layer = risk_function
+class DGP_Weibull_nonlinear: # This is nonlinear PH implementation
+    def __init__(self, n_features, alpha, gamma, risk_function=sine, device="cpu", dtype=torch.float64):
+        self.nf = n_features
+        self.alpha = torch.tensor([alpha], device=device).type(dtype)
+        self.gamma = torch.tensor([gamma], device=device).type(dtype)
+        self.coeff = torch.rand((n_features,), device=device).type(dtype)
+        self.risk_function = risk_function
         
     def PDF(self ,t ,x):
         return self.hazard(t, x) * self.survival(t, x)
@@ -199,25 +198,10 @@ class DGP_Weibull_nonlinear:
         return torch.exp(-self.cum_hazard(t, x))
     
     def hazard(self, t, x):
-        shape, scale = self.pred_params(x)
-        return shape/scale * (t/scale)**(shape-1)
+        return ((self.gamma/self.alpha)*((t/self.alpha)**(self.gamma-1))) * torch.exp(self.risk_function(x,self.coeff))
 
     def cum_hazard(self, t, x):
-        shape, scale = self.pred_params(x)
-        return (t/scale)**shape
-
-    def parameters(self):
-        return [self.alpha, self.gamma, self.beta]
-
-    def pred_params(self, x):
-        hidden = torch.exp(self.hidden_layer(torch.matmul(x, self.beta)))
-        shape = torch.matmul(hidden, self.alpha)
-        scale = torch.matmul(hidden, self.gamma)
-        return shape, scale
-    
-    def parameters(self):
-        return [self.alpha, self.gamma, self.beta] 
+        return ((t/self.alpha)**self.gamma) * torch.exp(self.risk_function(x, self.coeff))
     
     def rvs(self, x, u):
-        shape, scale = self.pred_params(x)
-        return scale * ((-LOG(u))**(1/shape))
+        return ((-LOG(u)/torch.exp(self.risk_function(x, self.coeff)))**(1/self.gamma))*self.alpha
