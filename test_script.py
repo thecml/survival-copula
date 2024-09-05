@@ -67,7 +67,7 @@ def single_loss(model, data, event_name='t1'):#estimates loss assuming every thi
 
 if __name__ == "__main__":
     from data_loader import CompetingRiskSyntheticDataLoader
-    from copula import Nested_Convex_Copula, Clayton_Bivariate, Clayton_Triple, Frank_Triple
+    from copula import Nested_Convex_Copula, Clayton_Bivariate, Clayton_Triple, Frank_Triple, Frank_Bivariate
     from distributions import Weibull_log_linear, Weibull_nonlinear, EXP_nonlinear
     from utility import kendall_tau_to_theta
     
@@ -122,13 +122,15 @@ if __name__ == "__main__":
     #copula = NestedClayton(torch.tensor([copula_start_point]),torch.tensor([copula_start_point]),eps,eps, DEVICE)
     copula = Nested_Convex_Copula(['fr'], ['fr'], [0.01], [0.01], eps=1e-3, dtype=dtype, device=device)
     #copula = Clayton_Triple(theta=2.0, eps=1e-3, dtype=dtype, device=device)
+    #copula = Frank_Bivariate(theta=0.01, eps=1e-3, dtype=dtype, device=device)
+    #copula = Frank_Triple(theta=2.0, eps=1e-3, dtype=dtype, device=device)
     
     # Make and train model
     n_epochs = 10000
     n_dists = 1
     batch_size = 128 # High batch size (>1024) fails with NaN for the copula with k_tau=0.5 (linear)
-    layers = [128, 256]
-    lr_dict = {'network': 0.0001, 'copula': 0.001} # 0.001
+    layers = [64, 64]
+    lr_dict = {'network': 0.0001, 'copula': 0.001}
     model = CopulaMLP(n_features, layers=layers, n_events=n_events,
                       n_dists=n_dists, copula=copula, dgps=dgps,
                       time_bins=time_bins, device=device)
