@@ -8,6 +8,9 @@ def LOG(x):
 def sine(x, coeff):
     return 2 * torch.sin(torch.matmul(x, coeff) * math.pi + 0.1)
 
+def relu(x, coeff):
+    return torch.relu(torch.matmul(x, coeff))
+
 class DGP_LogNormal_linear:
     # Note this is the LogNormal model, not the LogNormal CoxPH model
     def __init__(self, mu: List[float], sigma: List[float], device='cpu', dtype=torch.float64) -> None:
@@ -181,7 +184,7 @@ class DGP_Weibull_linear: # This is PH implementation
         return ((-LOG(u)/torch.exp(torch.matmul(x, self.coeff)))**(1/self.gamma))*self.alpha
 
 class DGP_Weibull_nonlinear: # This is nonlinear PH implementation
-    def __init__(self, n_features, alpha, gamma, risk_function=sine, device="cpu", dtype=torch.float64):
+    def __init__(self, n_features, alpha, gamma, risk_function=relu, device="cpu", dtype=torch.float64):
         self.nf = n_features
         self.alpha = torch.tensor([alpha], device=device).type(dtype)
         self.gamma = torch.tensor([gamma], device=device).type(dtype)

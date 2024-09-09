@@ -3,6 +3,7 @@ import pandas as pd
 import torch
 import matplotlib.pyplot as plt
 import random
+import os
 from model import CopulaMLP
 from loss import loss_DGP_Triple
 
@@ -10,6 +11,7 @@ from data_loader import CompetingRiskSyntheticDataLoader
 from copula import Nested_Convex_Copula, Clayton_Bivariate, Clayton_Triple, Frank_Triple, Frank_Bivariate
 from distributions import Weibull_log_linear, Weibull_nonlinear, EXP_nonlinear
 from utility import kendall_tau_to_theta, make_time_bins, compute_l1_difference
+import config as cfg
 
 np.random.seed(0)
 torch.manual_seed(0)
@@ -22,28 +24,22 @@ torch.set_default_dtype(dtype)
 # Setup device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-data_cfg = {
-    "alpha_e1": 16,
-    "alpha_e2": 18,
-    "alpha_e3": 16,
-    "gamma_e1": 4,
-    "gamma_e2": 4,
-    "gamma_e3": 4,
-    "n_hidden": 8,
-    "n_events": 3,
-    "n_samples": 20000,
-    "n_features": 10
-}
+# CONSTS
+K_TAU = 0.5
+SEED = 0
+LINEAR = False
+COPULA_NAME = "clayton"
 
-def LOG(x):
-    return torch.log(x+1e-20*(x<1e-20))
+# Ktau/Theta (frank)
+# 0 - 0
+# 0.25 - 0.66
+# 0.5 - 2.0
 
 if __name__ == "__main__":    
-    k_tau = 0.5 # 0.25
-    dl = CompetingRiskSyntheticDataLoader().load_data(data_cfg, k_tau=k_tau, copula_name="clayton",
-                                                      linear=False, device=device, dtype=dtype)
+    dl = CompetingRiskSyntheticDataLoader().load_data(cfg.data_cfg, k_tau=K_TAU, copula_name=COPULA_NAME,
+                                                      linear=LINEAR, device=device, dtype=dtype)
     train_dict, valid_dict, test_dict = dl.split_data(train_size=0.7, valid_size=0.1, test_size=0.2,
-                                                      random_state=0)
+                                                      random_state=SEED)
     
     for dataset in [train_dict, valid_dict, test_dict]: # put on device
         for key in ['X', 'T', 'E']:
@@ -52,11 +48,6 @@ if __name__ == "__main__":
     n_features = train_dict['X'].shape[1]
     n_events = dl.n_events
     dgps = dl.dgps
-    
-    # Ktau/Theta (frank)
-    # 0 - 0
-    # 0.25 - 0.66
-    # 0.5 - 2.0
     
     dgp1 = dgps[0]
     dgp2 = dgps[1]
@@ -70,7 +61,7 @@ if __name__ == "__main__":
     print(f'minimum possibe loss with copula test: {loss_DGP_Triple(test_dict, dgp1, dgp2, dgp3, copula_test)}')#tau = 0 --> best thing model can achieve
     
     copula_dgp = 'clayton'
-    theta_dgp = kendall_tau_to_theta(copula_dgp, k_tau)
+    theta_dgp = kendall_tau_to_theta(copula_dgp, K_TAU)
     print(f"Goal theta: {theta_dgp}")
     eps = 1e-4
     
@@ -82,16 +73,8 @@ if __name__ == "__main__":
     #plt.show()
     #assert 0
 
-    #copula for estimation
-    copula_start_point = 2.0
-    #copula = Clayton(torch.tensor([copula_start_point]),eps, DEVICE)
-    #copula = Frank(torch.tensor([copula_start_point]),eps, DEVICE)
-    #copula = Clayton(torch.tensor([copula_start_point]),eps, DEVICE)
-    #copula = NestedClayton(torch.tensor([copula_start_point]),torch.tensor([copula_start_point]),eps,eps, DEVICE)
+    # Make copula
     copula = Nested_Convex_Copula(['cl'], ['cl', 'cl'], [0.01], [0.01, 0.01], eps=1e-3, dtype=dtype, device=device)
-    #copula = Clayton_Triple(theta=2.0, eps=1e-3, dtype=dtype, device=device)
-    #copula = Frank_Bivariate(theta=0.01, eps=1e-3, dtype=dtype, device=device)
-    #copula = Frank_Triple(theta=2.0, eps=1e-3, dtype=dtype, device=device)
     
     # Make and train model
     n_epochs = 10000
@@ -123,3 +106,14 @@ if __name__ == "__main__":
                                                   n_samples, steps=time_bins))
         print(f'{event_id}: ' + f'{survival_l1}')
 
+        # Save event results
+        model_name = "mlp"
+        result_row = pd.Series([model_name, SEED, LINEAR, COPULA_NAME, K_TAU, event_id, survival_l1],
+                                index=["ModelName", "Seed", "Linear", "Copula", "KTau", "EventId", "L1"])
+        filename = f"{cfg.RESULTS_DIR}/synthetic.csv"
+        if os.path.exists(filename):
+            results = pd.read_csv(filename)
+        else:
+            results = pd.DataFrame(columns=result_row.keys())
+        results = results.append(result_row, ignore_index=True)
+        results.to_csv(filename, index=False)

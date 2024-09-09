@@ -9,6 +9,27 @@ from typing import Union, Tuple, Optional, List
 Numeric = Union[float, int, bool]
 NumericArrayLike = Union[List[Numeric], Tuple[Numeric], np.ndarray, pd.Series, pd.DataFrame, torch.Tensor]
 
+class dotdict(dict):
+    """dot.notation access to dictionary attributes"""
+    __getattr__ = dict.get
+    __setattr__ = dict.__setitem__
+    __delattr__ = dict.__delitem__
+
+from preprocessor import Preprocessor
+
+def preprocess_data(X_train, X_valid, X_test, cat_features,
+                    num_features, as_array=False) \
+    -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    preprocessor = Preprocessor(cat_feat_strat='mode', num_feat_strat='mean', scaling_strategy="standard")
+    transformer = preprocessor.fit(X_train, cat_feats=cat_features, num_feats=num_features,
+                                   one_hot=True, fill_value=-1)
+    X_train = transformer.transform(X_train)
+    X_valid = transformer.transform(X_valid)
+    X_test = transformer.transform(X_test)
+    if as_array:
+        return (np.array(X_train), np.array(X_valid), np.array(X_test))
+    return (X_train, X_valid, X_test)
+
 def compute_l1_difference(truth_preds, model_preds, n_samples, steps, device='cpu'):
     t_m = steps.max().to(device)
     surv1 = truth_preds.to(device)
@@ -172,3 +193,58 @@ def make_stratified_split(
     df_test = pd.DataFrame(data=x_test, columns=columns)
     assert len(df) == len(df_train) + len(df_val) + len(df_test)
     return df_train, df_val, df_test
+
+def compute_unique_counts(
+        event: torch.Tensor,
+        time: torch.Tensor,
+        order: Optional[torch.Tensor] = None):
+    n_samples = event.shape[0]
+
+    if order is None:
+        order = torch.argsort(time)
+
+    uniq_times = torch.empty(n_samples, dtype=time.dtype, device=time.device)
+    uniq_events = torch.empty(n_samples, dtype=torch.int, device=time.device)
+    uniq_counts = torch.empty(n_samples, dtype=torch.int, device=time.device)
+
+    i = 0
+    prev_val = time[order[0]]
+    j = 0
+    while True:
+        count_event = 0
+        count = 0
+        while i < n_samples and prev_val == time[order[i]]:
+            if event[order[i]]:
+                count_event += 1
+
+            count += 1
+            i += 1
+
+        uniq_times[j] = prev_val
+        uniq_events[j] = count_event
+        uniq_counts[j] = count
+        j += 1
+
+        if i == n_samples:
+            break
+
+        prev_val = time[order[i]]
+
+    uniq_times = uniq_times[:j]
+    uniq_events = uniq_events[:j]
+    uniq_counts = uniq_counts[:j]
+    n_censored = uniq_counts - uniq_events
+
+    # offset cumulative sum by one
+    total_count = torch.cat([torch.tensor([0], device=uniq_counts.device), uniq_counts], dim=0)
+    n_at_risk = n_samples - torch.cumsum(total_count, dim=0)
+
+    return uniq_times, uniq_events, n_at_risk[:-1], n_censored
+
+def make_monotonic(
+        array: Union[torch.Tensor, np.ndarray, list]
+):
+    for i in range(len(array) - 1):
+        if not array[i] >= array[i + 1]:
+            array[i + 1] = array[i]
+    return array

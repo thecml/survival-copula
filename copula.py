@@ -166,15 +166,23 @@ class Nested_Convex_Copula:
         if condition_on == "u":
             u_eps[:,0] = u[:,0] + self.eps
             u_eps[:,1] = u[:,1] 
-            u_eps[:,2] = u[:,2] 
+            u_eps[:,2] = u[:,2]
+            u_eps[:,3] = u[:,3] 
         elif condition_on == 'v':
             u_eps[:,0] = u[:,0] 
             u_eps[:,1] = u[:,1] + self.eps
-            u_eps[:,2] = u[:,2] 
+            u_eps[:,2] = u[:,2]
+            u_eps[:,3] = u[:,3]
         elif condition_on == 'w':
             u_eps[:,0] = u[:,0] 
             u_eps[:,1] = u[:,1] 
             u_eps[:,2] = u[:,2] + self.eps
+            u_eps[:,3] = u[:,3]
+        elif condition_on == 'z':
+            u_eps[:,0] = u[:,0] 
+            u_eps[:,1] = u[:,1] 
+            u_eps[:,2] = u[:,2]
+            u_eps[:,3] = u[:,3] + self.eps
         return (self.CDF(u_eps)-self.CDF(u))/self.eps
 
     def enable_grad(self):

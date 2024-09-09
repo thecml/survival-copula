@@ -8,7 +8,7 @@ from utility import compute_l1_difference
 
 from loss import conditional_weibull_loss
 
-def create_representation(inputdim, layers, activation, bias=False):
+def create_representation(inputdim, layers, activation, bias=True):
     if activation == 'ReLU6':
         act = nn.ReLU6()
     elif activation == 'ReLU':
@@ -71,8 +71,8 @@ class DeepSurvivalMachinesTorch(torch.nn.Module):
         return outcomes
         
 class CopulaMLP:
-    def __init__(self, n_features, n_events, n_dists=5,
-                 layers=[32, 32], time_bins=None, dgps=None, copula=None, device='cuda'):
+    def __init__(self, n_features, n_events, n_dists=5, layers=[32, 32],
+                 time_bins=None, dgps=None, copula=None, device='cuda'):
         
         self.n_features = n_features
         self.copula = copula
@@ -94,7 +94,7 @@ class CopulaMLP:
             copula_grad_multiplier=1.0, copula_grad_clip=1.0,
             patience=100, optimizer='adam', weight_decay=0.001,
             lr_dict={'network': 5e-4, 'copula': 0.005},
-            betas=(0.9, 0.999), use_clipping=True, use_wandb=False, verbose=False):
+            betas=(0.9, 0.999), use_wandb=False, verbose=False):
 
         optim_dict = [{'params': self.model.parameters(), 'lr': lr_dict['network']}]
         if self.copula is not None:
@@ -110,8 +110,6 @@ class CopulaMLP:
         T = train_dict['T'].to(self.device)
         E = train_dict['E'].to(self.device)
         train_loader = DataLoader(TensorDataset(X, T, E), batch_size=batch_size, shuffle=True)
-        
-        #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min')
         
         self.model.to(self.device)
         min_delta = 0.0001
@@ -132,9 +130,6 @@ class CopulaMLP:
                     loss = conditional_weibull_loss(self.model, xi, ti, ei)
                         
                 loss.backward()
-                
-                #if use_clipping:
-                #   torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                     
                 if (copula_grad_multiplier) and (self.copula is not None):
                     if isinstance(self.copula, Nested_Convex_Copula):
@@ -166,18 +161,21 @@ class CopulaMLP:
             self.model.eval()
             with torch.no_grad():
                 # Compute survival L1
-                n_samples = valid_dict['X'].shape[0]
-                total_survival_l1 = 0
-                for i in range(self.n_events-1):
-                    truth_preds = torch.zeros((n_samples, self.time_bins.shape[0]), device=self.device)
-                    for j in range(self.time_bins.shape[0]):
-                        truth_preds[:,j] = self.dgps[i+1].survival(self.time_bins[j], valid_dict['X'].to(self.device))
-                    model_preds = self.predict(valid_dict['X'].to(self.device), self.time_bins, i+1)
-                    model_preds_th = torch.tensor(model_preds, device=self.device, dtype=torch.float64)
-                    survival_l1 = float(compute_l1_difference(truth_preds, model_preds_th,
-                                                            n_samples, steps=self.time_bins))
-                    total_survival_l1 += survival_l1
-                total_survival_l1 /= (self.n_events-1)
+                if self.dgps is not None:
+                    n_samples = valid_dict['X'].shape[0]
+                    total_survival_l1 = 0
+                    for i in range(self.n_events-1):
+                        truth_preds = torch.zeros((n_samples, self.time_bins.shape[0]), device=self.device)
+                        for j in range(self.time_bins.shape[0]):
+                            truth_preds[:,j] = self.dgps[i+1].survival(self.time_bins[j], valid_dict['X'].to(self.device))
+                        model_preds = self.predict(valid_dict['X'].to(self.device), self.time_bins, i+1)
+                        model_preds_th = torch.tensor(model_preds, device=self.device, dtype=torch.float64)
+                        survival_l1 = float(compute_l1_difference(truth_preds, model_preds_th,
+                                                                n_samples, steps=self.time_bins))
+                        total_survival_l1 += survival_l1
+                    total_survival_l1 /= (self.n_events-1)
+                else:
+                    total_survival_l1 = 0.0
                 
                 if self.copula is not None:
                     val_loss = conditional_weibull_loss(self.model, valid_dict['X'].to(self.device),
