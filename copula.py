@@ -28,7 +28,7 @@ class Clayton_Bivariate:
         tmp = torch.sum(tmp, dim=1) - 1.0
         return torch.exp((-1.0 / self.theta) * safe_log(tmp))
     
-    def conditional_cdf(self, condition_on, u):
+    def conditional_cdf(self, condition_on, u, n_risks):
         u_eps = torch.empty_like(u, device=self.device)
         if condition_on == "u":
             u_eps[:,0] = u[:,0] + self.eps
@@ -63,7 +63,7 @@ class Frank_Bivariate:
         tmp = log1mexp(-self.theta*u[:,0]) + log1mexp(-self.theta*u[:,1]) - log1mexp(-self.theta)
         return -1.0 / self.theta * log1mexp(tmp)
     
-    def conditional_cdf(self, condition_on, u):
+    def conditional_cdf(self, condition_on, u, n_risks):
         u_eps = torch.empty_like(u, device=self.device)
         if condition_on == "u":
             u_eps[:,0] = u[:,0] + self.eps
@@ -161,28 +161,42 @@ class Nested_Convex_Copula:
         new_uv = torch.cat([U, UV[:,2:3]], dim=1)
         return self.parent_copula.CDF(new_uv)
     
-    def conditional_cdf(self, condition_on, u):
+    def conditional_cdf(self, condition_on, u, n_risks):
         u_eps = torch.empty_like(u, device=self.device)
-        if condition_on == "u":
-            u_eps[:,0] = u[:,0] + self.eps
-            u_eps[:,1] = u[:,1] 
-            u_eps[:,2] = u[:,2]
-            u_eps[:,3] = u[:,3] 
-        elif condition_on == 'v':
-            u_eps[:,0] = u[:,0] 
-            u_eps[:,1] = u[:,1] + self.eps
-            u_eps[:,2] = u[:,2]
-            u_eps[:,3] = u[:,3]
-        elif condition_on == 'w':
-            u_eps[:,0] = u[:,0] 
-            u_eps[:,1] = u[:,1] 
-            u_eps[:,2] = u[:,2] + self.eps
-            u_eps[:,3] = u[:,3]
-        elif condition_on == 'z':
-            u_eps[:,0] = u[:,0] 
-            u_eps[:,1] = u[:,1] 
-            u_eps[:,2] = u[:,2]
-            u_eps[:,3] = u[:,3] + self.eps
+        if n_risks == 3:
+            if condition_on == "u":
+                u_eps[:,0] = u[:,0] + self.eps
+                u_eps[:,1] = u[:,1] 
+                u_eps[:,2] = u[:,2] 
+            elif condition_on == 'v':
+                u_eps[:,0] = u[:,0] 
+                u_eps[:,1] = u[:,1] + self.eps
+                u_eps[:,2] = u[:,2] 
+            elif condition_on == 'w':
+                u_eps[:,0] = u[:,0] 
+                u_eps[:,1] = u[:,1] 
+                u_eps[:,2] = u[:,2] + self.eps
+        elif n_risks == 4:
+            if condition_on == "u":
+                u_eps[:,0] = u[:,0] + self.eps
+                u_eps[:,1] = u[:,1] 
+                u_eps[:,2] = u[:,2]
+                u_eps[:,3] = u[:,3]
+            elif condition_on == 'v':
+                u_eps[:,0] = u[:,0] 
+                u_eps[:,1] = u[:,1] + self.eps
+                u_eps[:,2] = u[:,2]
+                u_eps[:,3] = u[:,3]
+            elif condition_on == 'w':
+                u_eps[:,0] = u[:,0] 
+                u_eps[:,1] = u[:,1] 
+                u_eps[:,2] = u[:,2] + self.eps
+                u_eps[:,3] = u[:,3]
+            elif condition_on == 'z':
+                u_eps[:,0] = u[:,0] 
+                u_eps[:,1] = u[:,1] 
+                u_eps[:,2] = u[:,2]
+                u_eps[:,3] = u[:,3] + self.eps
         return (self.CDF(u_eps)-self.CDF(u))/self.eps
 
     def enable_grad(self):
@@ -240,7 +254,7 @@ class Clayton_Triple:
         tmp = torch.sum(tmp, dim = 1) - 2.0
         return torch.exp((-1.0 / self.theta) * safe_log(tmp))
 
-    def conditional_cdf(self, condition_on, u):
+    def conditional_cdf(self, condition_on, u, n_risks):
         u_eps = torch.empty_like(u, device=self.device)
         if condition_on == "u":
             u_eps[:,0] = u[:,0] + self.eps
@@ -255,7 +269,6 @@ class Clayton_Triple:
             u_eps[:,1] = u[:,1] 
             u_eps[:,2] = u[:,2] + self.eps
         return (self.CDF(u_eps)-self.CDF(u))/self.eps
-    
 
     def enable_grad(self):
         self.theta.requires_grad = True
@@ -283,7 +296,7 @@ class Frank_Triple:
         tmp = log1mexp(-self.theta*u[:,0]) + log1mexp(-self.theta*u[:,1]) + log1mexp(-self.theta*u[:,2]) - log1mexp(-self.theta) - log1mexp(-self.theta)
         return -1.0 / self.theta * log1mexp(tmp)
     
-    def conditional_cdf(self, condition_on, uv):
+    def conditional_cdf(self, condition_on, uv, n_risks):
         uv_eps = torch.empty_like(uv, device=self.device)
         if condition_on == "u":
             uv_eps[:,0] = uv[:,0] + self.eps

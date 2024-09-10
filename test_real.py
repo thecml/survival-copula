@@ -4,6 +4,7 @@ import torch
 import matplotlib.pyplot as plt
 import random
 import os
+#from model import CopulaMLP
 from model import CopulaMLP
 from loss import loss_DGP_Triple
 
@@ -30,7 +31,7 @@ SEED = 0
 
 if __name__ == "__main__":    
     # Load and split data
-    dl = MimicCompetingDataLoader()
+    dl = SeerCompetingDataLoader()
     dl = dl.load_data()
     train_dict, valid_dict, test_dict = dl.split_data(train_size=0.7, valid_size=0.1,
                                                       test_size=0.2, random_state=SEED)
@@ -61,22 +62,25 @@ if __name__ == "__main__":
     time_bins = torch.cat((torch.tensor([0]).to(device), time_bins))
 
     # Make copula
-    copula = Nested_Convex_Copula(['fr'], ['fr', 'fr'],
-                                  [0.01],
-                                  [0.01, 0.01],
+    copula = Nested_Convex_Copula(['fr', 'fr', 'fr', 'fr', 'fr'],
+                                  ['fr', 'fr', 'fr', 'fr', 'fr'],
+                                  [0.01, 0.01, 0.01, 0.01, 0.01],
+                                  [0.01, 0.01, 0.01, 0.01, 0.01],
                                   eps=1e-3, dtype=dtype, device=device)
+    #from copula import Clayton_Triple, Frank_Triple
+    #copula = Frank_Triple(0.01, eps=1e-3, dtype=dtype, device=device)
     
     # Make and train model
     n_epochs = 10000
-    n_dists = 1 # 3 for SEER
+    n_dists = 3 # 1 for MIMIC, 3 for SEER
     batch_size = 128 # High batch size (>1024) fails with NaN for the copula with k_tau=0.5 (linear)
-    layers = [128, 128]
-    lr_dict = {'network': 0.001, 'copula': 0.001}
+    layers = [32]
+    lr_dict = {'network': 0.0001, 'copula': 0.001}
     model = CopulaMLP(n_features, layers=layers, n_events=n_events,
                       n_dists=n_dists, copula=copula, dgps=None,
                       time_bins=time_bins, device=device)
     model.fit(train_dict, valid_dict, lr_dict=lr_dict, n_epochs=n_epochs,
-              patience=50, batch_size=batch_size, verbose=True, weight_decay=0.01) # patience=50 for dgp/seer, patience=10 for mimic
+              patience=50, batch_size=batch_size, verbose=False, weight_decay=0.01) # patience=50 for dgp/seer, patience=10 for mimic
     
     # Make predictions
     all_preds = []

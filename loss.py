@@ -44,10 +44,10 @@ def conditional_weibull_loss(model, x, t, E, elbo=True, copula=None):
             loss = -loss/E.shape[0]
         else:
             S = torch.exp(s).clamp(0.001,0.999)
-            p1 = f[:,0] + safe_log(copula.conditional_cdf("u", S))
-            p2 = f[:,1] + safe_log(copula.conditional_cdf("v", S))
-            p3 = f[:,2] + safe_log(copula.conditional_cdf("w", S))
-            p4 = f[:,3] + safe_log(copula.conditional_cdf("z", S))
+            p1 = f[:,0] + safe_log(copula.conditional_cdf("u", S, model.risks))
+            p2 = f[:,1] + safe_log(copula.conditional_cdf("v", S, model.risks))
+            p3 = f[:,2] + safe_log(copula.conditional_cdf("w", S, model.risks))
+            p4 = f[:,3] + safe_log(copula.conditional_cdf("z", S, model.risks))
             e1 = (E == 0) * 1.0
             e2 = (E == 1) * 1.0
             e3 = (E == 2) * 1.0
@@ -66,9 +66,9 @@ def conditional_weibull_loss(model, x, t, E, elbo=True, copula=None):
             loss = -loss/E.shape[0]
         else:
             S = torch.exp(s).clamp(0.001,0.999)
-            p1 = f[:,0] + safe_log(copula.conditional_cdf("u", S))
-            p2 = f[:,1] + safe_log(copula.conditional_cdf("v", S))
-            p3 = f[:,2] + safe_log(copula.conditional_cdf("w", S))
+            p1 = f[:,0] + safe_log(copula.conditional_cdf("u", S, model.risks))
+            p2 = f[:,1] + safe_log(copula.conditional_cdf("v", S, model.risks))
+            p3 = f[:,2] + safe_log(copula.conditional_cdf("w", S, model.risks))
             e1 = (E == 0) * 1.0
             e2 = (E == 1) * 1.0
             e3 = (E == 2) * 1.0
@@ -119,9 +119,9 @@ def loss_DGP_Triple(data_dict, dgp1, dgp2, dgp3, copula):
         loss = -loss/e.shape[0]
     else:
         S = torch.concat([s1.reshape(-1,1), s2.reshape(-1,1), s3.reshape(-1,1)], axis=1) .clamp(0.001,0.999)
-        p1 = safe_log(f1) + safe_log(copula.conditional_cdf("u", S))
-        p2 = safe_log(f2) + safe_log(copula.conditional_cdf("v", S))
-        p3 = safe_log(f3) + safe_log(copula.conditional_cdf("w", S))
+        p1 = safe_log(f1) + safe_log(copula.conditional_cdf("u", S, 3))
+        p2 = safe_log(f2) + safe_log(copula.conditional_cdf("v", S, 3))
+        p3 = safe_log(f3) + safe_log(copula.conditional_cdf("w", S, 3))
         e1 = (e == 0) * 1.0
         e2 = (e == 1) * 1.0
         e3 = (e == 2) * 1.0
