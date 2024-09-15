@@ -6,7 +6,7 @@ import numpy as np
 from copula import Nested_Convex_Copula
 from utility import compute_l1_difference
 
-from loss import conditional_weibull_loss
+from loss import conditional_weibull_loss, conditional_weibull_loss_multi
 
 def create_representation(inputdim, layers, activation, bias=True):
     if activation == 'ReLU6':
@@ -94,7 +94,7 @@ class CopulaMLP:
             copula_grad_multiplier=1.0, copula_grad_clip=1.0,
             patience=100, optimizer='adam', weight_decay=0.001,
             lr_dict={'network': 5e-4, 'copula': 0.005},
-            betas=(0.9, 0.999), use_wandb=False, verbose=False):
+            betas=(0.9, 0.999), use_wandb=False, verbose=False, multi=False):
 
         optim_dict = [{'params': self.model.parameters(), 'lr': lr_dict['network']}]
         if self.copula is not None:
@@ -125,9 +125,15 @@ class CopulaMLP:
             for xi, ti, ei in train_loader:
                 optimizer.zero_grad()
                 if self.copula is not None:
-                    loss = conditional_weibull_loss(self.model, xi, ti, ei, copula=self.copula)
+                    if multi:
+                        loss = conditional_weibull_loss_multi(self.model, xi, ti, ei, self.device, copula=self.copula)
+                    else:
+                        loss = conditional_weibull_loss(self.model, xi, ti, ei, copula=self.copula)
                 else:
-                    loss = conditional_weibull_loss(self.model, xi, ti, ei)
+                    if multi:
+                        loss = conditional_weibull_loss_multi(self.model, xi, ti, ei, self.device, copula=None)
+                    else:
+                        loss = conditional_weibull_loss(self.model, xi, ti, ei)
                         
                 loss.backward()
                     
@@ -178,12 +184,22 @@ class CopulaMLP:
                     total_survival_l1 = 0.0
                 
                 if self.copula is not None:
-                    val_loss = conditional_weibull_loss(self.model, valid_dict['X'].to(self.device),
-                                                        valid_dict['T'].to(self.device), valid_dict['E'].to(self.device),
-                                                        elbo=True, copula=self.copula)
+                    if multi:
+                        val_loss = conditional_weibull_loss_multi(self.model, valid_dict['X'].to(self.device),
+                                                            valid_dict['T'].to(self.device), valid_dict['E'].to(self.device),
+                                                            self.device, copula=self.copula)
+                    else:
+                        val_loss = conditional_weibull_loss(self.model, valid_dict['X'].to(self.device),
+                                                            valid_dict['T'].to(self.device), valid_dict['E'].to(self.device),
+                                                            elbo=True, copula=self.copula)
                 else:
-                    val_loss = conditional_weibull_loss(self.model, valid_dict['X'].to(self.device),
-                                                        valid_dict['T'].to(self.device), valid_dict['E'].to(self.device))
+                    if multi:
+                        val_loss = conditional_weibull_loss_multi(self.model, valid_dict['X'].to(self.device),
+                                                            valid_dict['T'].to(self.device), valid_dict['E'].to(self.device),
+                                                            self.device, copula=None)
+                    else:
+                        val_loss = conditional_weibull_loss(self.model, valid_dict['X'].to(self.device),
+                                                            valid_dict['T'].to(self.device), valid_dict['E'].to(self.device))
                 
                 #scheduler.step(val_loss)
 
