@@ -1,4 +1,4 @@
-from SurvivalEVAL import LifelinesEvaluator
+from SurvivalEVAL import LifelinesEvaluator, mean_error
 import numpy as np
 import pandas as pd 
 import torch
@@ -7,6 +7,7 @@ import random
 import os
 from model import CopulaMLP
 from loss import loss_DGP_Triple
+from SurvivalEVAL.Evaluations.util import predict_median_survival_time
 
 from data_loader import CompetingRiskSyntheticDataLoader
 from copula import Nested_Convex_Copula, Clayton_Bivariate, Clayton_Triple, Frank_Triple, Frank_Bivariate
@@ -46,8 +47,7 @@ if __name__ == "__main__":
         for key in ['X', 'T', 'E']:
             dataset[key] = dataset[key].to(device)
     
-    n_features = train_dict['X'].shape[1]
-    n_events = dl.n_events
+    n_features = train_dict['X'].shape[1]c
     dgps = dl.dgps
     
     dgp1 = dgps[0]
@@ -75,23 +75,25 @@ if __name__ == "__main__":
     #assert 0
 
     # Make copula
-    copula = Nested_Convex_Copula(['fr', 'fr', 'fr', 'fr'],
-                                  ['fr', 'fr', 'fr', 'fr'],
-                                  [0.01, 0.01, 0.01, 0.01],
-                                  [0.01, 0.01, 0.01, 0.01],
-                                  eps=1e-3, dtype=dtype, device=device)
+    #copula = Nested_Convex_Copula(['fr', 'fr', 'fr', 'fr'],
+    #                              ['fr', 'fr', 'fr', 'fr'],
+    #                              [0.01, 0.01, 0.01, 0.01],
+    #                              [0.01, 0.01, 0.01, 0.01],
+    #                             eps=1e-3, dtype=dtype, device=device)
+    #from copula import Clayton_Triple, Frank_Triple
+    copula = Frank_Triple(0.01, eps=1e-3, dtype=dtype, device=device)
     
     # Make and train model
-    n_epochs = 10000 #10000
+    n_epochs = 10000
     n_dists = 3
     batch_size = 128 # High batch size (>1024) fails with NaN for the copula with k_tau=0.5 (linear)
     layers = [128, 128]
-    lr_dict = {'network': 0.0001, 'copula': 0.001}
+    lr_dict = {'network': 0.0001, 'copula': 0.005}
     model = CopulaMLP(n_features, layers=layers, n_events=n_events,
                       n_dists=n_dists, copula=copula, dgps=dgps,
                       time_bins=time_bins, device=device)
     model.fit(train_dict, valid_dict, lr_dict=lr_dict, n_epochs=n_epochs,
-              patience=50, batch_size=batch_size, verbose=True, weight_decay=0.01)
+              patience=100, batch_size=batch_size, verbose=True, weight_decay=0.001)
 
     # Make predictions (include censoring)
     all_preds = []
@@ -110,7 +112,7 @@ if __name__ == "__main__":
         model_preds_th = torch.tensor(surv_preds.values, device=device, dtype=dtype)
         survival_l1 = float(compute_l1_difference(truth_preds, model_preds_th,
                                                   n_samples, steps=time_bins))
-        
+
         n_train_samples = len(train_dict['X'])
         n_test_samples= len(test_dict['X'])
         y_train_time = train_dict['T']
@@ -127,5 +129,10 @@ if __name__ == "__main__":
         mae_pseudo = lifelines_eval.mae(method="Pseudo_obs")
         d_calib = lifelines_eval.d_calibration()[0]
         
-        metrics = [ci, ibs, mae_hinge, mae_margin, mae_pseudo, survival_l1, d_calib]
+        median_survs = lifelines_eval.predict_time_from_curve(predict_median_survival_time)
+        true_times = np.array(dl.data_dict[2][f'T{event_id+1}'])
+        event_indicators = np.array([1] * len(y_test_event))
+        true_mae = mean_error(median_survs, true_times, event_indicators, method='Uncensored')
+        
+        metrics = [ci, ibs, mae_hinge, mae_margin, mae_pseudo, survival_l1, d_calib, true_mae]
         print(f'{model_name}: ' + f'{metrics}')

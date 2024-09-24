@@ -187,6 +187,7 @@ class CompetingRiskSyntheticDataLoader(BaseDataLoader):
         self.X = pd.DataFrame(X.cpu(), columns=columns)
         self.y_e = event_indicators
         self.y_t = observed_times
+        self.true_times = [t1_times, t2_times, t3_times]
         self.y_t1 = t1_times
         self.y_t2 = t2_times
         self.y_t3 = t3_times
@@ -214,7 +215,7 @@ class CompetingRiskSyntheticDataLoader(BaseDataLoader):
                                                             random_state=random_state)
         
         dataframes = [df_train, df_valid, df_test]
-        dicts = []
+        self.data_dict = []
         for dataframe in dataframes:
             data_dict = dict()
             data_dict['X'] = torch.tensor(dataframe.loc[:, 'X0':'X9'].to_numpy(), dtype=dtype)
@@ -223,9 +224,9 @@ class CompetingRiskSyntheticDataLoader(BaseDataLoader):
             data_dict['T1'] = torch.tensor(dataframe['t1'].to_numpy(), dtype=dtype)
             data_dict['T2'] = torch.tensor(dataframe['t2'].to_numpy(), dtype=dtype)
             data_dict['T3'] = torch.tensor(dataframe['t3'].to_numpy(), dtype=dtype)
-            dicts.append(data_dict)
+            self.data_dict.append(data_dict)
             
-        return dicts[0], dicts[1], dicts[2]
+        return self.data_dict[0], self.data_dict[1], self.data_dict[2]
 
 class SeerCompetingDataLoader(BaseDataLoader):
     """
