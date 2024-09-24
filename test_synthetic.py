@@ -47,7 +47,7 @@ if __name__ == "__main__":
         for key in ['X', 'T', 'E']:
             dataset[key] = dataset[key].to(device)
     
-    n_features = train_dict['X'].shape[1]c
+    n_features = train_dict['X'].shape[1]
     dgps = dl.dgps
     
     dgp1 = dgps[0]
