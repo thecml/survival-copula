@@ -9,7 +9,7 @@ from model import CopulaMLP
 from loss import loss_DGP_Triple
 from SurvivalEVAL.Evaluations.util import predict_median_survival_time
 
-from data_loader import CompetingRiskSyntheticDataLoader
+from data_loader import SingleEventSyntheticDataLoader
 from copula import Nested_Convex_Copula, Clayton_Bivariate, Clayton_Triple, Frank_Triple, Frank_Bivariate
 from distributions import Weibull_log_linear, Weibull_nonlinear, EXP_nonlinear
 from utility import kendall_tau_to_theta, make_time_bins, compute_l1_difference
@@ -27,7 +27,7 @@ torch.set_default_dtype(dtype)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # CONSTS
-K_TAU = 0.5
+K_TAU = 0.25
 SEED = 0
 LINEAR = True
 COPULA_NAME = "frank"
@@ -38,8 +38,8 @@ COPULA_NAME = "frank"
 # 0.5 - 2.0
 
 if __name__ == "__main__":    
-    dl = CompetingRiskSyntheticDataLoader().load_data(cfg.data_cfg, k_tau=K_TAU, copula_name=COPULA_NAME,
-                                                      linear=LINEAR, device=device, dtype=dtype)
+    dl = SingleEventSyntheticDataLoader().load_data(cfg.data_cfg, k_tau=K_TAU, copula_name=COPULA_NAME,
+                                                    linear=LINEAR, device=device, dtype=dtype)
     train_dict, valid_dict, test_dict = dl.split_data(train_size=0.7, valid_size=0.1, test_size=0.2,
                                                       random_state=SEED)
     
@@ -53,17 +53,8 @@ if __name__ == "__main__":
     
     dgp1 = dgps[0]
     dgp2 = dgps[1]
-    dgp3 = dgps[2]
-    print(f'minimum possibe loss train: {loss_DGP_Triple(train_dict, dgp1, dgp2, dgp3, None)}')#tau = 0 --> copula None
-    print(f'minimum possibe loss val: {loss_DGP_Triple(valid_dict, dgp1, dgp2, dgp3, None)}')#tau = 0 --> copula None
-    print(f'minimum possibe loss test: {loss_DGP_Triple(test_dict, dgp1, dgp2, dgp3, None)}')#tau = 0 --> copula None
-    copula_test = Nested_Convex_Copula(['fr'], ['fr'], [2.0], [2.0], eps=1e-3, dtype=dtype, device=device)
-    print(f'minimum possibe loss with copula train: {loss_DGP_Triple(train_dict, dgp1, dgp2, dgp3, copula_test)}')#tau = 0 --> best thing model can achieve
-    print(f'minimum possibe loss with copula val: {loss_DGP_Triple(valid_dict, dgp1, dgp2, dgp3, copula_test)}')#tau = 0 --> best thing model can achieve
-    print(f'minimum possibe loss with copula test: {loss_DGP_Triple(test_dict, dgp1, dgp2, dgp3, copula_test)}')#tau = 0 --> best thing model can achieve
     
-    copula_dgp = 'frank'
-    theta_dgp = kendall_tau_to_theta(copula_dgp, K_TAU)
+    theta_dgp = kendall_tau_to_theta(COPULA_NAME, K_TAU)
     print(f"Goal theta: {theta_dgp}")
     eps = 1e-4
     
@@ -82,19 +73,19 @@ if __name__ == "__main__":
     #                              [0.01, 0.01, 0.01, 0.01],
     #                             eps=1e-3, dtype=dtype, device=device)
     #from copula import Clayton_Triple, Frank_Triple
-    copula = Frank_Triple(0.01, eps=1e-3, dtype=dtype, device=device)
+    copula = Frank_Bivariate(0.01, eps=1e-3, dtype=dtype, device=device)
     
     # Make and train model
     n_epochs = 10000
-    n_dists = 3
-    batch_size = 128 # High batch size (>1024) fails with NaN for the copula with k_tau=0.5 (linear)
-    layers = [64, 64]
-    lr_dict = {'network': 0.0001, 'copula': 0.001}
+    n_dists = 1
+    batch_size = train_dict['X'].shape[0] # High batch size (>1024) fails with NaN for the copula with k_tau=0.5 (linear)
+    layers = [32]
+    lr_dict = {'network': 1e-3, 'copula': 1e-2}
     model = CopulaMLP(n_features, layers=layers, n_events=n_events,
                       n_dists=n_dists, copula=copula, dgps=dgps,
                       time_bins=time_bins, device=device)
     model.fit(train_dict, valid_dict, lr_dict=lr_dict, n_epochs=n_epochs,
-              patience=100, batch_size=batch_size, verbose=True, weight_decay=0.001)
+              patience=10000, batch_size=batch_size, verbose=True, weight_decay=0)
 
     # Make predictions (include censoring)
     all_preds = []
@@ -130,10 +121,5 @@ if __name__ == "__main__":
         mae_pseudo = lifelines_eval.mae(method="Pseudo_obs")
         d_calib = lifelines_eval.d_calibration()[0]
         
-        median_survs = lifelines_eval.predict_time_from_curve(predict_median_survival_time)
-        true_times = np.array(dl.data_dict[2][f'T{event_id+1}'])
-        event_indicators = np.array([1] * len(y_test_event))
-        true_mae = mean_error(median_survs, true_times, event_indicators, method='Uncensored')
-        
-        metrics = [ci, ibs, mae_hinge, mae_margin, mae_pseudo, survival_l1, d_calib, true_mae]
+        metrics = [ci, ibs, mae_hinge, mae_margin, mae_pseudo, survival_l1, d_calib]
         print(f'{model_name}: ' + f'{metrics}')
