@@ -4,18 +4,16 @@ import pandas as pd
 import math
 from sklearn.utils import shuffle
 from skmultilearn.model_selection import iterative_train_test_split
-from typing import Union, Tuple, Optional, List
+from typing import Union, Tuple, Optional, List, Any
+from preprocessor import Preprocessor
 
 Numeric = Union[float, int, bool]
 NumericArrayLike = Union[List[Numeric], Tuple[Numeric], np.ndarray, pd.Series, pd.DataFrame, torch.Tensor]
 
-class dotdict(dict):
-    """dot.notation access to dictionary attributes"""
-    __getattr__ = dict.get
-    __setattr__ = dict.__setitem__
-    __delattr__ = dict.__delitem__
-
-from preprocessor import Preprocessor
+def convert_to_structured(T, E):
+    default_dtypes = {"names": ("event", "time"), "formats": ("bool", "i4")}
+    concat = list(zip(E, T))
+    return np.array(concat, dtype=default_dtypes)
 
 def preprocess_data(X_train, X_valid, X_test, cat_features,
                     num_features, as_array=False) \
