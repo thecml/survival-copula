@@ -158,7 +158,7 @@ if __name__ == "__main__":
     df.time = df.time.round().astype(int)
     
     # Make synthetic censoring time
-    strategy = "feature_importance"
+    strategy = "feature_importance" # original, best, feature_importance
     censor_times = make_synthetic_censoring(strategy, df, df_full)
     censor_times = np.round(censor_times).astype(int)
     

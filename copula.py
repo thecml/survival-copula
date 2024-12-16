@@ -28,7 +28,7 @@ class Clayton_Bivariate:
         tmp = torch.sum(tmp, dim=1) - 1.0
         return torch.exp((-1.0 / self.theta) * safe_log(tmp))
     
-    def conditional_cdf(self, condition_on, u, n_risks):
+    def conditional_cdf(self, condition_on, u):
         u_eps = torch.empty_like(u, device=self.device)
         if condition_on == "u":
             u_eps[:,0] = u[:,0] + self.eps
@@ -63,7 +63,7 @@ class Frank_Bivariate:
         tmp = log1mexp(-self.theta*u[:,0]) + log1mexp(-self.theta*u[:,1]) - log1mexp(-self.theta)
         return -1.0 / self.theta * log1mexp(tmp)
     
-    def conditional_cdf(self, condition_on, u, n_risks):
+    def conditional_cdf(self, condition_on, u):
         u_eps = torch.empty_like(u, device=self.device)
         if condition_on == "u":
             u_eps[:,0] = u[:,0] + self.eps
@@ -254,7 +254,7 @@ class Clayton_Triple:
         tmp = torch.sum(tmp, dim = 1) - 2.0
         return torch.exp((-1.0 / self.theta) * safe_log(tmp))
 
-    def conditional_cdf(self, condition_on, u, n_risks):
+    def conditional_cdf(self, condition_on, u):
         u_eps = torch.empty_like(u, device=self.device)
         if condition_on == "u":
             u_eps[:,0] = u[:,0] + self.eps
@@ -296,7 +296,7 @@ class Frank_Triple:
         tmp = log1mexp(-self.theta*u[:,0]) + log1mexp(-self.theta*u[:,1]) + log1mexp(-self.theta*u[:,2]) - log1mexp(-self.theta) - log1mexp(-self.theta)
         return -1.0 / self.theta * log1mexp(tmp)
     
-    def conditional_cdf(self, condition_on, uv, n_risks):
+    def conditional_cdf(self, condition_on, uv):
         uv_eps = torch.empty_like(uv, device=self.device)
         if condition_on == "u":
             uv_eps[:,0] = uv[:,0] + self.eps

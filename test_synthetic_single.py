@@ -11,7 +11,7 @@ from SurvivalEVAL.Evaluations.util import predict_median_survival_time
 
 from data_loader import SingleEventSyntheticDataLoader
 from copula import Nested_Convex_Copula, Clayton_Bivariate, Clayton_Triple, Frank_Triple, Frank_Bivariate
-from distributions import Weibull_log_linear, Weibull_nonlinear, EXP_nonlinear
+from models import Weibull_log_linear, Weibull_nonlinear, EXP_nonlinear
 from utility import kendall_tau_to_theta, make_time_bins, compute_l1_difference
 import config as cfg
 

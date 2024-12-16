@@ -167,8 +167,28 @@ def conditional_weibull_loss(model, x, t, E, elbo=True, copula=None):
         loss = -loss/E.shape[0]
     return loss
 
+def loss_double(model1, model2, data, copula=None):#estimates the joint loss
+    s1 = model1.survival(data['T'], data['X'])
+    s2 = model2.survival(data['T'], data['X'])
+    f1 = model1.PDF(data['T'], data['X'])
+    f2 = model2.PDF(data['T'], data['X'])
+    w = torch.mean(data['E'])
+    if copula is None:
+        p1 = safe_log(f1) + safe_log(s2)
+        p2 = safe_log(f2) + safe_log(s1)
+    else:
+        S = torch.cat([s1.reshape(-1,1), s2.reshape(-1,1)], dim=1).clamp(0.001,0.999)
+        p1 = safe_log(f1) + safe_log(copula.conditional_cdf("u", S))
+        p2 = safe_log(f2) + safe_log(copula.conditional_cdf("v", S))
+    p1[torch.isnan(p1)] = 0
+    p2[torch.isnan(p2)] = 0
+    e1 = (data['E'] == 0)*1.0
+    e2 = (data['E'] == 1)*1.0
+    loss = torch.sum(p1 * e1) + torch.sum(p2*e2)
+    loss = -loss/data['E'].shape[0]
+    return loss
 
-def loss_DGP_Triple(data_dict, dgp1, dgp2, dgp3, copula):
+def loss_Triple(data_dict, dgp1, dgp2, dgp3, copula):
     x = data_dict['X']
     t = data_dict['T']
     e = data_dict['E']

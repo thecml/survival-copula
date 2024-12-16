@@ -263,6 +263,9 @@ class MetabricDataLoader(BaseDataLoader):
 
         self.num_features = num_feats
         self.cat_features = []
+        
+        cols_standardize = ['x0', 'x1', 'x2', 'x3', 'x8'] # TODO Move this
+        data[cols_standardize] = data[cols_standardize].apply(lambda x: (x - x.mean()) / x.std())
                     
         self.X = pd.DataFrame(data[num_feats], dtype=np.float64)
         self.y = convert_to_structured(outcomes['time'], outcomes['event'])

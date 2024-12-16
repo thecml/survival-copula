@@ -14,14 +14,14 @@ pandas2ri.activate()
 compound_cox = importr("compound.Cox")
 
 class CopulaGraphic():
-    def __init__(self, event_times, event_indicators) -> None:
+    def __init__(self, event_times, event_indicators, alpha=0) -> None:
         #index = np.lexsort((event_indicators, event_times))
         #unique_times = np.unique(event_times[index], return_counts=True)
         #self.survival_times = unique_times[0]
         
         cg_result = compound_cox.CG_Clayton(event_times,
                                             event_indicators,
-                                            alpha=0,
+                                            alpha=alpha,
                                             S_plot=False) # assumes Clayton(th=0)
         self.survival_probabilities = cg_result.rx2('surv')
         self.survival_times = cg_result.rx2('time')
@@ -89,7 +89,8 @@ def mae_dependent(predicted_times: np.ndarray,
                   event_times: np.ndarray,
                   event_indicators: np.ndarray,
                   train_event_times: Optional[np.ndarray] = None,
-                  train_event_indicators: Optional[np.ndarray] = None):
+                  train_event_indicators: Optional[np.ndarray] = None,
+                  alpha: float = 0):
     event_indicators = event_indicators.astype(bool)
     n_test = event_times.size
     
@@ -99,7 +100,7 @@ def mae_dependent(predicted_times: np.ndarray,
     censor_times = event_times[~event_indicators]
     weights = np.ones(n_test)
     
-    cg_model = CopulaGraphic(train_event_times, train_event_indicators)
+    cg_model = CopulaGraphic(train_event_times, train_event_indicators, alpha=alpha)
     cg_linear_zero = cg_model.cg_linear_zero
     
     best_guesses = cg_model.best_guess(censor_times)
