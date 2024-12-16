@@ -1,12 +1,9 @@
-from typing import List
 import torch
-import math
+import torch.nn as nn
+from typing import List
 
 def LOG(x):
     return torch.log(x+1e-20*(x<1e-20))
-
-def sine(x, coeff):
-    return 2 * torch.sin(torch.matmul(x, coeff) * math.pi + 0.1)
 
 def relu(x, coeff):
     return torch.relu(torch.matmul(x, coeff))
@@ -55,11 +52,10 @@ class DGP_LogNormal_linear:
         mu, sigma = self.pred_params(x)
         return torch.exp(mu + sigma * torch.erfinv(2 * u - 1) * torch.sqrt(torch.tensor(2)).to(self.device))
 
-class DGP_LogNormal_nonlinear(DGP_LogNormal_linear):
-    # Note this is the LogNormal nonlinear model
-    def __init__(self, n_features, n_hidden, mu: List[float], sigma: List[float], risk_function=torch.nn.ReLU(),
+class DGP_LogNormal_nonlinear(DGP_LogNormal_linear): # This is nonlinear lognormal CoxPH model
+    def __init__(self, n_features, mu: List[float], sigma: List[float], risk_function=torch.nn.ReLU(),
                  device='cpu', dtype=torch.float64) -> None:
-        self.beta = torch.rand((n_features, n_hidden), device=device).type(dtype)
+        self.beta = torch.rand((n_features,), device=device).type(dtype)
         self.mu_coeff = torch.tensor(mu, device=device).type(dtype)
         self.sigma_coeff = torch.tensor(sigma, device=device).type(dtype)
         self.hidden_layer = risk_function
@@ -74,7 +70,7 @@ class DGP_LogNormal_nonlinear(DGP_LogNormal_linear):
         sigma = torch.matmul(hidden, self.sigma_coeff)
         return mu, sigma
 
-class DGP_LogNormalCox_linear:
+class DGP_LogNormalCox_linear: # This is linear lognormal CoxPH model
     def __init__(self, n_features, mu: float, sigma: float, device="cpu", dtype=torch.float64) -> None:
         self.mu = torch.tensor([mu]).type(dtype).to(device)
         self.sigma = torch.tensor([sigma]).type(dtype).to(device)
@@ -117,7 +113,7 @@ class DGP_LogNormalCox_linear:
         # TODO: no closed form solution for the lognormal CoxPH model
         raise NotImplementedError
 
-class DGP_Exp_linear:
+class DGP_Exp_linear: # This is linear exponential PH model
     def __init__(self, n_features, baseline_hazard: float, device="cpu", dtype=torch.float64) -> None:
         self.bh = torch.tensor([baseline_hazard]).type(dtype).to(device)
         self.coeff = torch.rand((n_features,)).to(device)
@@ -143,68 +139,87 @@ class DGP_Exp_linear:
     def rvs(self, x, u):
         return -LOG(u)/self.hazard(t=None, x=x)
 
-class DGP_EXP_nonlinear(DGP_Exp_linear):
-    # This is the exponential CoxPH model with a nonlinear risk function
-    def __init__(self, n_features, baseline_hazard: float, n_hidden, risk_function=torch.nn.ReLU(),
+class DGP_EXP_nonlinear(DGP_Exp_linear): # This is nonlinear exponential PH model 
+    def __init__(self, n_features, baseline_hazard: float, risk_function=relu,
                  device='cpu', dtype=torch.float64) -> None:
         self.bh = torch.tensor([baseline_hazard], device=device).type(dtype)
-        self.beta = torch.rand((n_features, n_hidden), device=device).type(dtype)
-        self.coeff = torch.rand((n_hidden,), device=device).type(dtype)
-        self.hidden_layer = risk_function
+        self.beta = torch.rand((n_features,), device=device).type(dtype)
+        self.coeff = torch.rand((n_features,), device=device).type(dtype)
+        self.risk_function = risk_function
     
     def hazard(self, t, x):
-        risks = torch.matmul(self.hidden_layer(torch.matmul(x, self.beta)), self.coeff)
+        risks = self.risk_function(x, self.coeff)
         return self.bh * torch.exp(risks)
 
-class DGP_Weibull_linear: # This is PH implementation 
+class DGP_Weibull_linear:
     def __init__(self, n_features, alpha: float, gamma: float, device="cpu", dtype=torch.float64):
         self.alpha = torch.tensor([alpha], device=device).type(dtype)
         self.gamma = torch.tensor([gamma], device=device).type(dtype)
-        self.coeff = torch.rand((n_features,), device=device).type(dtype)
-
-    def PDF(self ,t ,x):
-        return self.hazard(t, x) * self.survival(t,x)
+        self.device = device
+        self.dtype = dtype
+        self.coeff = 2 * torch.rand((n_features,), device=device).type(dtype) - 1
     
-    def CDF(self ,t ,x):
-        return 1 - self.survival(t,x)
+    def PDF(self, t, x):
+        return self.hazard(t, x) * self.survival(t, x)
     
-    def survival(self ,t ,x):
-        return torch.exp(-self.cum_hazard(t,x))
+    def CDF(self, t, x):
+        return 1 - self.survival(t, x)
+    
+    def survival(self, t, x):
+        return torch.exp(-self.cum_hazard(t, x))
     
     def hazard(self, t, x):
-        return ((self.gamma/self.alpha)*((t/self.alpha)**(self.gamma-1))) * torch.exp(torch.matmul(x, self.coeff))
-        
+        linear_term = torch.matmul(x, self.coeff)
+        return ((self.gamma / self.alpha) * ((t / self.alpha) ** (self.gamma - 1))) * torch.exp(linear_term)
+    
     def cum_hazard(self, t, x):
-        return ((t/self.alpha)**self.gamma) * torch.exp(torch.matmul(x, self.coeff))
+        linear_term = torch.matmul(x, self.coeff)
+        return ((t / self.alpha) ** self.gamma) * torch.exp(linear_term)
 
     def parameters(self):
         return [self.alpha, self.gamma, self.coeff]
     
     def rvs(self, x, u):
-        return ((-LOG(u)/torch.exp(torch.matmul(x, self.coeff)))**(1/self.gamma))*self.alpha
-
-class DGP_Weibull_nonlinear: # This is nonlinear PH implementation
-    def __init__(self, n_features, alpha, gamma, risk_function=relu, device="cpu", dtype=torch.float64):
-        self.nf = n_features
+        linear_term = torch.matmul(x, self.coeff)
+        survival_term = -torch.log(u) / torch.exp(linear_term)
+        result = (survival_term ** (1 / self.gamma)) * self.alpha
+        return result.detach().cpu().numpy()
+    
+class DGP_Weibull_nonlinear:
+    def __init__(self, n_features, alpha: float, gamma: float,
+                 hidden_dim: int=32, device="cpu", dtype=torch.float64):
         self.alpha = torch.tensor([alpha], device=device).type(dtype)
         self.gamma = torch.tensor([gamma], device=device).type(dtype)
-        self.coeff = torch.rand((n_features,), device=device).type(dtype)
-        self.risk_function = risk_function
-        
-    def PDF(self ,t ,x):
+        self.device = device
+        self.dtype = dtype
+        self.net = nn.Sequential(
+            nn.Linear(n_features, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1)
+        ).to(device).type(dtype)
+    
+    def PDF(self, t, x):
         return self.hazard(t, x) * self.survival(t, x)
     
-    def CDF(self ,t ,x):    
+    def CDF(self, t, x):
         return 1 - self.survival(t, x)
     
-    def survival(self ,t ,x):   
+    def survival(self, t, x):
         return torch.exp(-self.cum_hazard(t, x))
     
     def hazard(self, t, x):
-        return ((self.gamma/self.alpha)*((t/self.alpha)**(self.gamma-1))) * torch.exp(self.risk_function(x,self.coeff))
-
+        nonlinear_term = torch.exp(self.net(x)).squeeze()
+        return ((self.gamma / self.alpha) * ((t / self.alpha) ** (self.gamma - 1))) * nonlinear_term
+    
     def cum_hazard(self, t, x):
-        return ((t/self.alpha)**self.gamma) * torch.exp(self.risk_function(x, self.coeff))
+        nonlinear_term = torch.exp(self.net(x)).squeeze()
+        return ((t / self.alpha) ** self.gamma) * nonlinear_term
+
+    def parameters(self):
+        return [self.alpha, self.gamma] + list(self.net.parameters())
     
     def rvs(self, x, u):
-        return ((-LOG(u)/torch.exp(self.risk_function(x, self.coeff)))**(1/self.gamma))*self.alpha
+        nonlinear_term = torch.exp(self.net(x)).squeeze()
+        survival_term = -torch.log(u) / nonlinear_term
+        result = (survival_term ** (1 / self.gamma)) * self.alpha
+        return result.detach().cpu().numpy()
