@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import torch
 import torch.nn as nn
@@ -5,6 +6,7 @@ import torch.nn.functional as F
 import argparse
 import pandas as pd
 from typing import List, Tuple, Optional, Union
+from torch.utils.data import DataLoader, TensorDataset
 
 def LOG(x):
     return torch.log(x+1e-20*(x<1e-20))
@@ -36,37 +38,55 @@ def predict_survival_curve(model, x_test, time_bins, truth=False):
     return surv_estimate, time_bins, time_bins.max()
 
 def dependent_train_loop_linear(model1, model2, train_data, val_data,
-                                n_iter, optimizer1='Adam', lr=1e-4,
+                                n_epochs, batch_size=32, optimizer1='Adam', lr=1e-4,
                                 verbose=False, copula=None):
     model1.enable_grad()
     model2.enable_grad()
     copula.enable_grad()
     
+    patience = 1000
     min_val_loss = 1000
     optimizer = torch.optim.Adam([{"params": model1.parameters(), "lr": lr},
                                   {"params": model2.parameters(), "lr": lr},
                                   {"params": copula.parameters(), "lr": lr}])
-    for itr in range(n_iter):
+
+    # Create DataLoaders for mini-batching
+    train_loader = DataLoader(TensorDataset(train_data['T'], train_data['X'], train_data['E']),
+                              batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(TensorDataset(val_data['T'], val_data['X'], val_data['E']),
+                            batch_size=batch_size, shuffle=False)
+
+    stop_itr = 0
+    for epoch in range(n_epochs):
         optimizer.zero_grad()
-        loss = loss_function(model1, model2, train_data, copula)
-        loss.backward()
-        for p in copula.parameters():
-            p.grad = p.grad * 100
-            p.grad.clamp_(torch.tensor([-0.5]), torch.tensor([0.5]))
-        
-        optimizer.step()
-        
-        for p in copula.parameters():
-            if p <= 0.01:
-                with torch.no_grad():
-                    p[:] = torch.clamp(p, 0.01, 100)
-        
+
+        # Iterate over mini-batches
+        for batch_idx, (T, X, E) in enumerate(train_loader):
+            batch_data = {'T': T, 'X': X, 'E': E}
+            loss = loss_function(model1, model2, batch_data, copula)
+            loss.backward()
+
+            # Gradient clipping for copula parameters
+            for p in copula.parameters():
+                p.grad = p.grad * 100
+                p.grad.clamp_(-0.5, 0.5)
+
+            optimizer.step()
+
+        # Validation phase
         with torch.no_grad():
-            val_loss = loss_function(model1, model2, val_data, copula)
-            if verbose and itr % 100 == 0:
-                print(f"{val_loss} - {copula.theta}")
+            val_loss = 0.0
             
-            if not torch.isnan(val_loss) and val_loss < min_val_loss:
+            for batch_idx, (T, X, E) in enumerate(val_loader):
+                batch_data = {'T': T, 'X': X, 'E': E}
+                val_loss += loss_function(model1, model2, batch_data, copula).item()
+
+            val_loss /= len(val_loader)
+
+            if verbose and epoch % 100 == 0:
+                print(f"Epoch {epoch}, Validation Loss: {val_loss} - {copula.theta}")
+
+            if not math.isnan(val_loss) and val_loss < min_val_loss:
                 stop_itr = 0
                 best_c1 = model1.coeff.detach().clone()
                 best_c2 = model2.coeff.detach().clone()
@@ -75,12 +95,12 @@ def dependent_train_loop_linear(model1, model2, train_data, val_data,
                 best_sig1 = model1.sigma.detach().clone()
                 best_sig2 = model2.sigma.detach().clone()
                 best_theta = copula.theta.detach().clone()
-                min_val_loss = val_loss.detach().clone()
+                min_val_loss = val_loss
             else:
                 stop_itr += 1
-                if stop_itr == 2000:
+                if stop_itr == patience:
                     break
-                
+
     model1.mu = best_mu1
     model2.mu = best_mu2
     model1.sigma = best_sig1

@@ -26,7 +26,7 @@ torch.set_default_dtype(dtype)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # CONSTS
-K_TAU = 0.25
+K_TAU = 0.5
 SEED = 0
 LINEAR = True
 COPULA_NAME = "clayton"
@@ -46,27 +46,20 @@ if __name__ == "__main__":
         for key in ['X', 'T', 'E']:
             dataset[key] = dataset[key].to(device)
     
-    n_features = train_dict['X'].shape[1]
-    dgps = dl.dgps
-    n_events = 2
-    
-    dgp1 = dgps[0]
-    dgp2 = dgps[1]
-    
     theta_dgp = kendall_tau_to_theta(COPULA_NAME, K_TAU)
     print(f"Goal theta: {theta_dgp}")
-    eps = 1e-4
     
     time_bins = make_time_bins(train_dict['T'].cpu(), event=None, dtype=dtype).to(device)
     time_bins = torch.cat((torch.tensor([0]).to(device), time_bins))
     
     # Train dependent model
+    n_features = train_dict['X'].shape[1]
     dep_model1 = Weibull_log_linear(n_features, dtype=dtype, device=device) # censoring model
     dep_model2 = Weibull_log_linear(n_features, dtype=dtype, device=device) # event model
-    copula = Clayton_Bivariate(4.0, 1e-4, dtype=dtype, device=device) # copula model
+    copula = Clayton_Bivariate(2.0, 1e-4, dtype=dtype, device=device) # copula model
     dep_model1, dep_model2, copula = dependent_train_loop_linear(dep_model1, dep_model2, train_dict,
-                                                                 valid_dict, copula=copula, n_iter=200000,
-                                                                 lr=1e-3, verbose=True)
+                                                                 valid_dict, copula=copula, n_epochs=10000,
+                                                                 lr=1e-3, batch_size=128, verbose=True)
     survival_outputs, _, _ = predict_survival_curve(dep_model1, test_dict['X'], time_bins)
     survival_outputs = pd.DataFrame(survival_outputs, columns=np.array(time_bins))
     dep_evaluator = SurvivalEvaluator(survival_outputs, time_bins, test_dict['T'], test_dict['E'],

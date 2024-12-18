@@ -103,7 +103,7 @@ if __name__ == "__main__":
     dep_model2 = Weibull_log_linear(num_features, dtype=dtype, device=device) # event model
     copula = Clayton_Bivariate(torch.tensor([2.0]), 1e-4, dtype=dtype, device=device) # clayton copula
     dep_model1, dep_model2, copula = dependent_train_loop_linear(dep_model1, dep_model2, train_dict,
-                                                                 valid_dict, copula=copula, n_iter=50000,
+                                                                 valid_dict, copula=copula, n_epochs=50000,
                                                                  verbose=True)
     survival_outputs, _, _ = predict_survival_curve(dep_model1, test_dict['X'], time_bins)
     survival_outputs = pd.DataFrame(survival_outputs, columns=np.array(time_bins))
