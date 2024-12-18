@@ -114,10 +114,10 @@ def conditional_weibull_loss(model, x, t, E, elbo=True, copula=None):
             loss = -loss/E.shape[0]
         else:
             S = torch.exp(s).clamp(0.001,0.999)
-            p1 = f[:,0] + safe_log(copula.conditional_cdf("u", S, model.risks))
-            p2 = f[:,1] + safe_log(copula.conditional_cdf("v", S, model.risks))
-            p3 = f[:,2] + safe_log(copula.conditional_cdf("w", S, model.risks))
-            p4 = f[:,3] + safe_log(copula.conditional_cdf("z", S, model.risks))
+            p1 = f[:,0] + safe_log(copula.conditional_cdf("u", S))
+            p2 = f[:,1] + safe_log(copula.conditional_cdf("v", S))
+            p3 = f[:,2] + safe_log(copula.conditional_cdf("w", S))
+            p4 = f[:,3] + safe_log(copula.conditional_cdf("z", S))
             e1 = (E == 0) * 1.0
             e2 = (E == 1) * 1.0
             e3 = (E == 2) * 1.0
@@ -136,9 +136,9 @@ def conditional_weibull_loss(model, x, t, E, elbo=True, copula=None):
             loss = -loss/E.shape[0]
         else:
             S = torch.exp(s).clamp(0.001,0.999)
-            p1 = f[:,0] + safe_log(copula.conditional_cdf("u", S, model.risks))
-            p2 = f[:,1] + safe_log(copula.conditional_cdf("v", S, model.risks))
-            p3 = f[:,2] + safe_log(copula.conditional_cdf("w", S, model.risks))
+            p1 = f[:,0] + safe_log(copula.conditional_cdf("u", S))
+            p2 = f[:,1] + safe_log(copula.conditional_cdf("v", S))
+            p3 = f[:,2] + safe_log(copula.conditional_cdf("w", S))
             e1 = (E == 0) * 1.0
             e2 = (E == 1) * 1.0
             e3 = (E == 2) * 1.0
@@ -154,8 +154,8 @@ def conditional_weibull_loss(model, x, t, E, elbo=True, copula=None):
             loss = -loss/E.shape[0]
         else:
             S = torch.exp(s).clamp(0.001,0.999)
-            p1 = f[:,0] + safe_log(copula.conditional_cdf("u", S, model.risks))
-            p2 = f[:,1] + safe_log(copula.conditional_cdf("v", S, model.risks))
+            p1 = f[:,0] + safe_log(copula.conditional_cdf("u", S))
+            p2 = f[:,1] + safe_log(copula.conditional_cdf("v", S))
             e1 = (E == 1) * 1.0
             e2 = (E == 0) * 1.0
             loss = torch.sum(e1 * p1) + torch.sum(e2 * p2)

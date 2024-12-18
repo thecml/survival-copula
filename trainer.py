@@ -36,7 +36,7 @@ def predict_survival_curve(model, x_test, time_bins, truth=False):
     return surv_estimate, time_bins, time_bins.max()
 
 def dependent_train_loop_linear(model1, model2, train_data, val_data,
-                                n_iter, optimizer1='Adam', lr=1e-3,
+                                n_iter, optimizer1='Adam', lr=1e-4,
                                 verbose=False, copula=None):
     model1.enable_grad()
     model2.enable_grad()
@@ -63,7 +63,7 @@ def dependent_train_loop_linear(model1, model2, train_data, val_data,
         
         with torch.no_grad():
             val_loss = loss_function(model1, model2, val_data, copula)
-            if verbose and itr % 1000 == 0:
+            if verbose and itr % 100 == 0:
                 print(f"{val_loss} - {copula.theta}")
             
             if not torch.isnan(val_loss) and val_loss < min_val_loss:

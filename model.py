@@ -100,7 +100,7 @@ class CopulaMLP:
         if self.copula is not None:
             self.copula.enable_grad()
             optim_dict.append({'params': self.copula.parameters(), 'lr': lr_dict['copula']})
-        
+            
         if optimizer == 'adam':
             optimizer = torch.optim.Adam(optim_dict, betas=betas, weight_decay=weight_decay)
         elif optimizer == 'adamw':
@@ -140,10 +140,12 @@ class CopulaMLP:
                 if (copula_grad_multiplier) and (self.copula is not None):
                     if isinstance(self.copula, Nested_Convex_Copula):
                         for p in self.copula.parameters()[:-2]:
-                            p.grad = (p.grad * copula_grad_multiplier).clip(-1 * copula_grad_clip, 1 *copula_grad_clip)
+                            if p.grad is not None:
+                                p.grad = (p.grad * copula_grad_multiplier).clip(-1 * copula_grad_clip, 1 *copula_grad_clip)
                     else:
                         for p in self.copula.parameters():
-                            p.grad = (p.grad * copula_grad_multiplier).clip(-1 * copula_grad_clip, 1 *copula_grad_clip)
+                            if p.grad is not None:
+                                p.grad = (p.grad * copula_grad_multiplier).clip(-1 * copula_grad_clip, 1 *copula_grad_clip)
                 
                 optimizer.step()
                 
@@ -166,23 +168,6 @@ class CopulaMLP:
             
             self.model.eval()
             with torch.no_grad():
-                # Compute survival L1
-                if self.dgps is not None:
-                    n_samples = valid_dict['X'].shape[0]
-                    total_survival_l1 = 0
-                    for i in range(self.n_events-1):
-                        truth_preds = torch.zeros((n_samples, self.time_bins.shape[0]), device=self.device)
-                        for j in range(self.time_bins.shape[0]):
-                            truth_preds[:,j] = self.dgps[i+1].survival(self.time_bins[j], valid_dict['X'].to(self.device))
-                        model_preds = self.predict(valid_dict['X'].to(self.device), self.time_bins, i+1)
-                        model_preds_th = torch.tensor(model_preds, device=self.device, dtype=torch.float64)
-                        survival_l1 = float(compute_l1_difference(truth_preds, model_preds_th,
-                                                                n_samples, steps=self.time_bins))
-                        total_survival_l1 += survival_l1
-                    total_survival_l1 /= (self.n_events-1)
-                else:
-                    total_survival_l1 = 0.0
-                
                 if self.copula is not None:
                     if multi:
                         val_loss = conditional_weibull_loss_multi(self.model, valid_dict['X'].to(self.device),
@@ -211,13 +196,11 @@ class CopulaMLP:
                         params = [np.around(float(param), 5) for param in self.copula.parameters()]
                     print(itr, "/", n_epochs, "train_loss: ", round(avg_train_loss, 4),
                         "val_loss: ", round(val_loss.item(), 4),
-                        "val_l1: ", round(total_survival_l1, 4),
                         "min_val_loss: ", round(best_val_loss.item(), 4),
                         "copula: ", params)
                 else:
                     print(itr, "/", n_epochs, "train_loss: ", round(avg_train_loss, 4),
                         "val_loss: ", round(val_loss.item(), 4),
-                        "val_l1: ", round(total_survival_l1, 4),
                         "min_val_loss: ", round(best_val_loss.item(), 4))
 
             # Check for early stopping

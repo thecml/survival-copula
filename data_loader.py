@@ -81,10 +81,10 @@ class SingleEventSyntheticDataLoader(BaseDataLoader):
             dgp1 = DGP_Weibull_linear(n_features, alpha_e1, gamma_e1, device, dtype)
             dgp2 = DGP_Weibull_linear(n_features, alpha_e2, gamma_e2, device, dtype)
         else:
-            dgp1 = DGP_Weibull_nonlinear(n_features, alpha=alpha_e1, gamma=gamma_e1,
-                                         device=device, dtype=dtype)
-            dgp2 = DGP_Weibull_nonlinear(n_features, alpha=alpha_e2, gamma=gamma_e2,
-                                         device=device, dtype=dtype)
+            dgp1 = DGP_Weibull_nonlinear(n_features, alpha=alpha_e1,
+                                         gamma=gamma_e1, device=device, dtype=dtype)
+            dgp2 = DGP_Weibull_nonlinear(n_features, alpha=alpha_e2,
+                                         gamma=gamma_e2, device=device, dtype=dtype)
             
         if copula_name is None or k_tau == 0:
             rng = np.random.default_rng(0)
@@ -97,19 +97,19 @@ class SingleEventSyntheticDataLoader(BaseDataLoader):
             u = torch.from_numpy(u).type(dtype).reshape(-1,1)
             v = torch.from_numpy(v).type(dtype).reshape(-1,1)
             uv = torch.cat([u, v], axis=1)
-            
-        t1_times = dgp1.rvs(X, uv[:,0].to(device)).cpu()
-        t2_times = dgp2.rvs(X, uv[:,1].to(device)).cpu()
+        
+        t1_times = dgp1.rvs(X, uv[:,0].to(device))
+        t2_times = dgp2.rvs(X, uv[:,1].to(device))
         
         observed_times = np.minimum(t1_times, t2_times)
-        event_indicators = (t2_times < t1_times).type(torch.int)
-        
+        event_indicators = np.array((t2_times < t1_times), dtype=np.int32)
+    
         columns = [f'X{i}' for i in range(n_features)]
         self.X = pd.DataFrame(X.cpu(), columns=columns)
         self.y_e = event_indicators
         self.y_t = observed_times
         self.dgps = [dgp1, dgp2]
-        self.n_events = 2
+        self.n_events = 1
         
         return self
     
@@ -125,9 +125,10 @@ class SingleEventSyntheticDataLoader(BaseDataLoader):
     
         dataframes = [df_train, df_valid, df_test]
         dicts = []
+        n_features = df.shape[1] - 2
         for dataframe in dataframes:
             data_dict = dict()
-            data_dict['X'] = torch.tensor(dataframe.loc[:, 'X0':'X9'].to_numpy(), dtype=dtype)
+            data_dict['X'] = torch.tensor(dataframe.loc[:, 'X0':f'X{n_features-1}'].to_numpy(), dtype=dtype)
             data_dict['E'] = torch.tensor(dataframe['event'].to_numpy(), dtype=dtype)
             data_dict['T'] = torch.tensor(dataframe['time'].to_numpy(), dtype=dtype)
             dicts.append(data_dict)

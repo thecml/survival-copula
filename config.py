@@ -6,17 +6,12 @@ PLOTS_DIR = Path.joinpath(ROOT_DIR, 'plots')
 DATA_DIR = Path.joinpath(ROOT_DIR, 'data')
 
 data_cfg = {
-    "alpha_e1": 18,
-    "alpha_e2": 17,
-    "alpha_e3": 16,
-    "gamma_e1": 4,
+    "alpha_e1": 17,
+    "alpha_e2": 18,
+    "gamma_e1": 5,
     "gamma_e2": 4,
-    "gamma_e3": 4,
-    "n_hidden": 8,
-    "n_events": 3,
-    "n_samples": 20000,
+    "n_samples": 1000,
     "n_features": 10,
-    "adm_censoring_time": 10
 }
 
 mimic_features = ['I50',

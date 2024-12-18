@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 import random
 import os
 from model import CopulaMLP
-from loss import loss_DGP_Triple
 from SurvivalEVAL.Evaluations.util import predict_median_survival_time
 
 from data_loader import SingleEventSyntheticDataLoader
@@ -49,7 +48,7 @@ if __name__ == "__main__":
     
     n_features = train_dict['X'].shape[1]
     dgps = dl.dgps
-    n_events = dl.n_events
+    n_events = 2
     
     dgp1 = dgps[0]
     dgp2 = dgps[1]
@@ -78,7 +77,7 @@ if __name__ == "__main__":
     # Make and train model
     n_epochs = 10000
     n_dists = 1
-    batch_size = train_dict['X'].shape[0] # High batch size (>1024) fails with NaN for the copula with k_tau=0.5 (linear)
+    batch_size = 32
     layers = [32]
     lr_dict = {'network': 1e-3, 'copula': 1e-2}
     model = CopulaMLP(n_features, layers=layers, n_events=n_events,
