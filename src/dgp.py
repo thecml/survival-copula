@@ -5,9 +5,6 @@ from typing import List
 def LOG(x):
     return torch.log(x+1e-20*(x<1e-20))
 
-def relu(x, coeff):
-    return torch.relu(torch.matmul(x, coeff))
-
 class DGP_LogNormal_linear:
     # Note this is the LogNormal model, not the LogNormal CoxPH model
     def __init__(self, mu: List[float], sigma: List[float], device='cpu', dtype=torch.float64) -> None:
@@ -52,23 +49,24 @@ class DGP_LogNormal_linear:
         mu, sigma = self.pred_params(x)
         return torch.exp(mu + sigma * torch.erfinv(2 * u - 1) * torch.sqrt(torch.tensor(2)).to(self.device))
 
-class DGP_LogNormal_nonlinear(DGP_LogNormal_linear): # This is nonlinear lognormal CoxPH model
-    def __init__(self, n_features, mu: List[float], sigma: List[float], risk_function=torch.nn.ReLU(),
-                 device='cpu', dtype=torch.float64) -> None:
-        self.beta = torch.rand((n_features,), device=device).type(dtype)
-        self.mu_coeff = torch.tensor(mu, device=device).type(dtype)
-        self.sigma_coeff = torch.tensor(sigma, device=device).type(dtype)
-        self.hidden_layer = risk_function
-        self.device = device
-
-    def parameters(self):
-        return [self.beta, self.mu_coeff, self.sigma_coeff]
+class DGP_LogNormal_nonlinear(DGP_LogNormal_linear):  # Nonlinear LogNormal model
+    def __init__(self, n_features, mu: list, sigma: list,
+                 hidden_dim=32, device='cpu', dtype=torch.float64) -> None:
+        super().__init__(mu, sigma, device, dtype)
+        self.net = nn.Sequential(
+            nn.Linear(n_features, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1)
+        ).to(device).type(dtype)
 
     def pred_params(self, x):
-        hidden = self.hidden_layer(torch.matmul(x, self.beta))
-        mu = torch.matmul(hidden, self.mu_coeff)
-        sigma = torch.matmul(hidden, self.sigma_coeff)
+        risks = self.net(x)
+        mu = torch.matmul(risks, self.mu_coeff)
+        sigma = torch.matmul(risks, self.sigma_coeff)
         return mu, sigma
+
+    def parameters(self):
+        return list(self.net.parameters()) + [self.mu_coeff, self.sigma_coeff]
 
 class DGP_LogNormalCox_linear: # This is linear lognormal CoxPH model
     def __init__(self, n_features, mu: float, sigma: float, device="cpu", dtype=torch.float64) -> None:
@@ -139,17 +137,22 @@ class DGP_Exp_linear: # This is linear exponential PH model
     def rvs(self, x, u):
         return -LOG(u)/self.hazard(t=None, x=x)
 
-class DGP_EXP_nonlinear(DGP_Exp_linear): # This is nonlinear exponential PH model 
-    def __init__(self, n_features, baseline_hazard: float, risk_function=relu,
-                 device='cpu', dtype=torch.float64) -> None:
-        self.bh = torch.tensor([baseline_hazard], device=device).type(dtype)
-        self.beta = torch.rand((n_features,), device=device).type(dtype)
-        self.coeff = torch.rand((n_features,), device=device).type(dtype)
-        self.risk_function = risk_function
-    
+class DGP_EXP_nonlinear(DGP_Exp_linear):  # This is the nonlinear exponential PH model
+    def __init__(self, n_features, baseline_hazard: float, 
+                 hidden_dim=32, device='cpu', dtype=torch.float64) -> None:
+        super().__init__(n_features, baseline_hazard, device, dtype)
+        self.net = nn.Sequential(
+            nn.Linear(n_features, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1)
+        ).to(device).type(dtype)
+
     def hazard(self, t, x):
-        risks = self.risk_function(x, self.coeff)
+        risks = self.net(x)
         return self.bh * torch.exp(risks)
+
+    def parameters(self):
+        return list(self.net.parameters()) + [self.bh]
 
 class DGP_Weibull_linear:
     def __init__(self, n_features, alpha: float, gamma: float, device="cpu", dtype=torch.float64):

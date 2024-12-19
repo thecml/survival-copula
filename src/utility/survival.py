@@ -5,7 +5,7 @@ import math
 from sklearn.utils import shuffle
 from skmultilearn.model_selection import iterative_train_test_split
 from typing import Union, Tuple, Optional, List, Any
-from preprocessor import Preprocessor
+from src.utility.preprocessor import Preprocessor
 
 Numeric = Union[float, int, bool]
 NumericArrayLike = Union[List[Numeric], Tuple[Numeric], np.ndarray, pd.Series, pd.DataFrame, torch.Tensor]

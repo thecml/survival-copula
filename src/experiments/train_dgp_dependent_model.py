@@ -1,40 +1,29 @@
+import random
 import torch
-from calculate_mae_dependent import mae_dependent
-from copula import Clayton_Bivariate, Frank_Bivariate
-from data_loader import MetabricDataLoader, SingleEventSyntheticDataLoader
+from src.copula import Clayton_Bivariate
+from src.data_loader import SingleEventSyntheticDataLoader
 import pandas as pd
 import numpy as np
-from lifelines import CoxPHFitter, WeibullAFTFitter
-from sksurv.ensemble import GradientBoostingSurvivalAnalysis
-from SurvivalEVAL import SurvivalEvaluator
-from SurvivalEVAL.Evaluations.util import predict_median_survival_time
-from sklearn.model_selection import train_test_split
-
-from models import Weibull_log_linear, LogNormalCox_linear
-from loss import loss_double
-from make_semi_synthetic import combine_data_with_censor, make_synthetic_censoring
-from plot import compare_km_curves
-from utility import convert_to_structured, kendall_tau_to_theta, make_time_bins
-from trainer import independent_train_loop_linear, dependent_train_loop_linear, predict_survival_curve
-
 import config as cfg
-# Set precision
+from SurvivalEVAL import SurvivalEvaluator
+
+from src.models import Weibull_log_linear
+from src.utility.survival import kendall_tau_to_theta, make_time_bins
+from src.trainer import train_copula_model, predict_survival_curve
+
+np.random.seed(0)
+torch.manual_seed(0)
+random.seed(0)
+
 dtype = torch.float64
 torch.set_default_dtype(dtype)
 
-# Set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# CONSTS
-K_TAU = 0.5
+K_TAU = 0.25
 SEED = 0
-LINEAR = True
+LINEAR = False
 COPULA_NAME = "clayton"
-
-# Ktau/Theta (frank)
-# 0 - 0
-# 0.25 - 0.66
-# 0.5 - 2.0
 
 if __name__ == "__main__":    
     dl = SingleEventSyntheticDataLoader().load_data(cfg.data_cfg, k_tau=K_TAU, copula_name=COPULA_NAME,
@@ -57,11 +46,11 @@ if __name__ == "__main__":
     dep_model1 = Weibull_log_linear(n_features, dtype=dtype, device=device) # censoring model
     dep_model2 = Weibull_log_linear(n_features, dtype=dtype, device=device) # event model
     copula = Clayton_Bivariate(2.0, 1e-4, dtype=dtype, device=device) # copula model
-    dep_model1, dep_model2, copula = dependent_train_loop_linear(dep_model1, dep_model2, train_dict,
+    dep_model1, dep_model2, copula = train_copula_model(dep_model1, dep_model2, train_dict,
                                                                  valid_dict, copula=copula, n_epochs=10000,
-                                                                 lr=1e-3, batch_size=128, verbose=True)
+                                                                 lr=1e-3, batch_size=1024, verbose=True)
     survival_outputs, _, _ = predict_survival_curve(dep_model1, test_dict['X'], time_bins)
-    survival_outputs = pd.DataFrame(survival_outputs, columns=np.array(time_bins))
+    survival_outputs = pd.DataFrame(survival_outputs.cpu().detach().numpy(), columns=np.array(time_bins.cpu()))
     dep_evaluator = SurvivalEvaluator(survival_outputs, time_bins, test_dict['T'], test_dict['E'],
                                       train_dict['T'], train_dict['E'])
     mae_margin = dep_evaluator.mae(method="Margin")

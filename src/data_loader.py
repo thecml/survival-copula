@@ -5,10 +5,10 @@ from typing import List
 import numpy as np
 from pycop import simulation
 import torch
-from utility import convert_to_structured, kendall_tau_to_theta
-from utility import make_stratified_split
-from dgp import DGP_Weibull_linear, DGP_Weibull_nonlinear
-import config as cfg
+from src.utility.survival import convert_to_structured, kendall_tau_to_theta
+from src.utility.survival import make_stratified_split
+from src.dgp import DGP_Weibull_linear, DGP_Weibull_nonlinear
+import src.config as cfg
 from pathlib import Path
 from sksurv.datasets import load_gbsg2, load_aids, load_whas500, load_flchain
 

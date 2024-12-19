@@ -1,11 +1,5 @@
 import math
-import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import argparse
-import pandas as pd
-from typing import List, Tuple, Optional, Union
 from torch.utils.data import DataLoader, TensorDataset
 
 def LOG(x):
@@ -37,15 +31,19 @@ def predict_survival_curve(model, x_test, time_bins, truth=False):
         surv_estimate[:,i] = model.survival(time_bins[i], x_test)
     return surv_estimate, time_bins, time_bins.max()
 
-def dependent_train_loop_linear(model1, model2, train_data, val_data,
-                                n_epochs, batch_size=32, optimizer1='Adam', lr=1e-4,
-                                verbose=False, copula=None):
+def train_copula_model(model1, model2, train_data, val_data,
+                       n_epochs, batch_size=32, lr=1e-3,
+                       verbose=False, copula=None):
+    
     model1.enable_grad()
     model2.enable_grad()
     copula.enable_grad()
     
     patience = 1000
     min_val_loss = 1000
+    copula_grad_multiplier = 1.0
+    copula_grad_clip = 1.0
+    
     optimizer = torch.optim.Adam([{"params": model1.parameters(), "lr": lr},
                                   {"params": model2.parameters(), "lr": lr},
                                   {"params": copula.parameters(), "lr": lr}])
@@ -66,12 +64,16 @@ def dependent_train_loop_linear(model1, model2, train_data, val_data,
             loss = loss_function(model1, model2, batch_data, copula)
             loss.backward()
 
-            # Gradient clipping for copula parameters
             for p in copula.parameters():
-                p.grad = p.grad * 100
-                p.grad.clamp_(-0.5, 0.5)
+                if p.grad is not None:
+                    p.grad = (p.grad * copula_grad_multiplier).clip(-1 * copula_grad_clip, 1 *copula_grad_clip)
 
             optimizer.step()
+            
+            for p in copula.parameters():
+                if p < 0.01:
+                    with torch.no_grad():
+                        p = torch.clamp(p, 0.01, 100)
 
         # Validation phase
         with torch.no_grad():
@@ -110,54 +112,3 @@ def dependent_train_loop_linear(model1, model2, train_data, val_data,
     copula.theta = best_theta
     
     return model1, model2, copula
-
-def independent_train_loop_linear(model1, model2, train_data, val_data,
-                                  n_iter, optimizer1='Adam', optimizer2='Adam',
-                                  lr=1e-3, verbose=False):
-    train_loss_log = []
-    val_loss_log = []
-    copula_log = torch.zeros((n_iter,))
-    model1.enable_grad()
-    model2.enable_grad()
-    
-    copula_grad_log = []
-    mu_grad_log = [[], []]
-    sigma_grad_log = [[], []]
-    coeff_grad_log = [[], []]
-    train_loss = []
-    val_loss = []
-    min_val_loss = 1000
-    stop_itr = 0
-    if optimizer1 == 'Adam':
-        model_optimizer = torch.optim.Adam(list(model1.parameters()) + list(model2.parameters()), lr=lr)
-    
-    for itr in range(n_iter):
-        model_optimizer.zero_grad()
-        loss = loss_function(model1, model2, train_data, None)
-        loss.backward()
-        model_optimizer.step() 
-        train_loss_log.append(loss.detach().clone())
-        with torch.no_grad():
-            val_loss = loss_function(model1, model2, val_data, None)
-            val_loss_log.append(val_loss.detach().clone())
-            if not torch.isnan(val_loss) and val_loss < min_val_loss:
-                stop_itr = 0
-                best_c1 = model1.coeff.detach().clone()
-                best_c2 = model2.coeff.detach().clone()
-                best_mu1 = model1.mu.detach().clone()
-                best_mu2 = model2.mu.detach().clone()
-                best_sig1 = model1.sigma.detach().clone()
-                best_sig2 = model2.sigma.detach().clone()
-                min_val_loss = val_loss.detach().clone()
-            else:
-                stop_itr += 1
-                if stop_itr == 2000:  
-                    break
-                
-    model1.mu = best_mu1
-    model2.mu = best_mu2
-    model1.sigma = best_sig1
-    model2.sigma = best_sig2
-    model1.coeff = best_c1
-    model2.coeff = best_c2
-    return model1, model2
