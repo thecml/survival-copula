@@ -32,14 +32,13 @@ def predict_survival_curve(model, x_test, time_bins, truth=False):
     return surv_estimate, time_bins, time_bins.max()
 
 def train_copula_model(model1, model2, train_data, val_data,
-                       n_epochs, batch_size=32, lr=1e-3,
+                       n_epochs, patience=1000, batch_size=32, lr=1e-3,
                        verbose=False, copula=None):
     
     model1.enable_grad()
     model2.enable_grad()
     copula.enable_grad()
     
-    patience = 1000
     min_val_loss = 1000
     copula_grad_multiplier = 1.0
     copula_grad_clip = 1.0

@@ -5,10 +5,10 @@ from typing import List
 import numpy as np
 from pycop import simulation
 import torch
-from src.utility.survival import convert_to_structured, kendall_tau_to_theta
-from src.utility.survival import make_stratified_split
-from src.dgp import DGP_Weibull_linear, DGP_Weibull_nonlinear
-import src.config as cfg
+from utility.survival import convert_to_structured, kendall_tau_to_theta
+from utility.survival import make_stratified_split
+from dgp import DGP_Weibull_linear, DGP_Weibull_nonlinear
+import config as cfg
 from pathlib import Path
 from sksurv.datasets import load_gbsg2, load_aids, load_whas500, load_flchain
 
@@ -59,6 +59,28 @@ class BaseDataLoader(ABC):
 
     def _get_cat_features(self, data) -> List[str]:
         return data.select_dtypes(['object']).columns.tolist()
+
+def get_data_loader(dataset_name: str) -> BaseDataLoader:
+    if dataset_name == "synthetic":
+        return SingleEventSyntheticDataLoader()
+    elif dataset_name == "seer":
+        return SeerDataLoader()
+    elif dataset_name == "mimic":
+        return MimicDataLoader()
+    elif dataset_name == "metabric":
+        return MetabricDataLoader()
+    elif dataset_name == "support":
+        return SupportDataLoader()
+    elif dataset_name == "aids":
+        return AidsDataLoader()
+    elif dataset_name == "gbsg":
+        return GbsgDataLoader()
+    elif dataset_name == "whas":
+        return WhasDataLoader()
+    elif dataset_name == "flchain":
+        return FlchainDataLoader()
+    else:
+        raise NotImplementedError()
 
 class SingleEventSyntheticDataLoader(BaseDataLoader):
     def load_data(self, data_config, copula_name='clayton', k_tau=0,

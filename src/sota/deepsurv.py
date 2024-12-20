@@ -18,7 +18,7 @@ import torch.optim as optim
 import torch.nn as nn
 from tqdm import trange
 from torch.utils.data import DataLoader, TensorDataset
-from src.utility.survival import compute_unique_counts, make_monotonic
+from utility.survival import compute_unique_counts, make_monotonic
 
 Numeric = Union[float, int, bool]
 NumericArrayLike = Union[List[Numeric], Tuple[Numeric], np.ndarray, pd.Series, pd.DataFrame, torch.Tensor]

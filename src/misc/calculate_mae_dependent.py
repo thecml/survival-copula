@@ -6,10 +6,10 @@ import warnings
 import torch
 from rpy2.robjects.packages import importr
 from rpy2.robjects import pandas2ri
-import src.config as cfg
+import config as cfg
 from dataclasses import InitVar, dataclass, field
 
-from src.metrics import mae_dependent
+from metrics import mae_dependent
 
 if __name__ == "__main__":
     # Test the functions

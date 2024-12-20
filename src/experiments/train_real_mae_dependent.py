@@ -1,8 +1,9 @@
+import argparse
 import random
 import torch
-from src.misc.calculate_mae_dependent import mae_dependent
-from src.copula import Clayton_Bivariate
-from src.data_loader import MetabricDataLoader
+from misc.calculate_mae_dependent import mae_dependent
+from copula import Clayton_Bivariate
+from data_loader import MetabricDataLoader, get_data_loader
 import pandas as pd
 import numpy as np
 from lifelines import CoxPHFitter
@@ -10,10 +11,10 @@ from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.util import predict_median_survival_time
 from sklearn.model_selection import train_test_split
 
-from src.models import Weibull_log_linear
-from src.strategies import combine_data_with_censor, make_synthetic_censoring
-from src.utility.survival import make_time_bins
-from src.trainer import train_copula_model, predict_survival_curve
+from models import Weibull_log_linear
+from strategies import combine_data_with_censor, make_synthetic_censoring
+from utility.survival import make_stratified_split, make_time_bins
+from trainer import train_copula_model, predict_survival_curve
 
 np.random.seed(0)
 torch.manual_seed(0)
@@ -24,9 +25,20 @@ torch.set_default_dtype(dtype)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+MODELS = ["coxph", "coxboost", "rsf", "deepsurv", "deephit", "mtlr"]
+
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--dataset_name', type=str, default='metabric')
+    
+    args = parser.parse_args()
+    seed = args.seed
+    dataset_name = args.dataset_name
+    
     # Load data
-    dl = MetabricDataLoader().load_data()
+    dl = get_data_loader(dataset_name).load_data()  
     num_features, cat_features = dl.get_features()
     df_full = dl.get_data()
     
@@ -40,23 +52,24 @@ if __name__ == "__main__":
     censor_times = make_synthetic_censoring(strategy, df, df_full)
     censor_times = np.round(censor_times).astype(int)
     
-    # Combine truth and censored data to make semi synth data
+    # Combine truth and censored data to make semi-synthetic dataset
     df = combine_data_with_censor(df, censor_times)
     
     # Split data
-    data_train_valid, data_test = train_test_split(df, test_size=0.3, random_state=0)
-    data_train, data_valid = train_test_split(data_train_valid, test_size=0.2, random_state=0)
+    df_train, df_valid, df_test = make_stratified_split(df, stratify_colname='both', frac_train=0.7,
+                                                        frac_valid=0.1, frac_test=0.2,
+                                                        random_state=seed)
     
-    # Process data.
-    data_train = data_train.drop(columns=["true_time"])
-    true_test_time = data_test.true_time.values
-    true_test_event = np.ones(data_test.shape[0])
-    data_valid = data_valid.drop(columns=["true_time"])
-    data_test = data_test.drop(columns=["true_time"])
+    # Process data
+    data_train = df_train.drop(columns=["true_time"])
+    true_test_time = df_test.true_time.values
+    true_test_event = np.ones(df_test.shape[0])
+    data_valid = df_valid.drop(columns=["true_time"])
+    data_test = df_test.drop(columns=["true_time"])
     time_bins = make_time_bins(data_train["time"].values, event=data_train["event"].values)
     
     # Train CoxPH model
-    model = CoxPHFitter(penalizer=0.0001) 
+    model = CoxPHFitter(penalizer=0.0001)
     model.fit(data_train, duration_col='time', event_col='event')
 
     # Calculate true MAE

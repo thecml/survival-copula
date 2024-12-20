@@ -1,11 +1,11 @@
-from src.data_loader import MetabricDataLoader
+from data_loader import MetabricDataLoader
 import pandas as pd
 import numpy as np
 from lifelines import CoxPHFitter, WeibullAFTFitter
 from sksurv.ensemble import GradientBoostingSurvivalAnalysis
 
-from src.misc.plot import compare_km_curves
-from src.utility.survival import convert_to_structured
+from misc.plot import compare_km_curves
+from utility.survival import convert_to_structured
 
 def combine_data_with_censor(
         df: pd.DataFrame,

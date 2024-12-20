@@ -1,5 +1,5 @@
 from pathlib import Path
-ROOT_DIR = Path(__file__).absolute().parent
+ROOT_DIR = Path(__file__).absolute().parent.parent
 
 RESULTS_DIR = Path.joinpath(ROOT_DIR, 'results')
 PLOTS_DIR = Path.joinpath(ROOT_DIR, 'plots')
