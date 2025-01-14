@@ -1,0 +1,264 @@
+import argparse
+import os
+import random
+import torch
+from metrics import ci_dependent, ibs_dependent
+from misc.calculate_mae_dependent import mae_dependent
+from copula import Clayton_Bivariate, Frank_Bivariate
+from data_loader import MetabricDataLoader, get_data_loader
+import pandas as pd
+import numpy as np
+import config as cfg
+from sota.deephit import make_deephit_single, train_deephit_model
+from sota.deepsurv import DeepSurv, make_deepsurv_prediction, train_deepsurv_model
+from sota.mtlr import make_mtlr_prediction, mtlr, train_mtlr_model
+from utility.data import dotdict, format_data_deephit_single
+from lifelines import CoxPHFitter
+from SurvivalEVAL import SurvivalEvaluator
+from SurvivalEVAL.Evaluations.util import predict_median_survival_time
+from sklearn.model_selection import train_test_split
+from scipy.interpolate import interp1d
+
+from models import Weibull_log_linear
+from strategies import combine_data_with_censor, make_synthetic_censoring
+from utility.survival import convert_to_structured, make_stratified_split, make_time_bins, theta_to_kendall_tau
+from trainer import train_copula_model, predict_survival_curve
+
+from sksurv.ensemble import GradientBoostingSurvivalAnalysis, RandomSurvivalForest
+
+np.random.seed(0)
+torch.manual_seed(0)
+random.seed(0)
+
+dtype = torch.float64
+torch.set_default_dtype(dtype)
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+#MODELS = ["coxph", "gbsa", "rsf", "deepsurv", "deephit", "mtlr"]
+MODELS = ["coxph"]
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--copula_name', type=str, default="clayton")
+    parser.add_argument('--dataset_name', type=str, default='support')
+    parser.add_argument('--strategy', type=str, default='top_5')
+    
+    args = parser.parse_args()
+    seed = args.seed
+    copula_name = args.copula_name
+    dataset_name = args.dataset_name
+    strategy = args.strategy
+    
+    # Load data
+    dl = get_data_loader(dataset_name).load_data()
+    num_features, cat_features = dl.get_features()
+    df_full = dl.get_data()
+    
+    # Drop censored rows
+    df = df_full.drop(df_full[df_full.event == 0].index)
+    df.reset_index(drop=True, inplace=True)
+    df.time = df.time.round().astype(int)
+    
+    # Make synthetic censoring time
+    censor_times, selected_features = make_synthetic_censoring(strategy, df, df_full)
+    censor_times = np.round(censor_times).astype(int)
+    
+    # Combine truth and censored data to make semi-synthetic dataset
+    df = combine_data_with_censor(df, censor_times, selected_features)
+    
+    # Split data
+    df_train, df_valid, df_test = make_stratified_split(df, stratify_colname='both', frac_train=0.7,
+                                                        frac_valid=0.1, frac_test=0.2,
+                                                        random_state=seed)
+    
+    # Adjust types
+    df_train = df_train.astype({col: float for col in df_train.columns if col not in ["time", "true_time", "event"]})
+    df_train["time"] = df_train["time"].astype(int)
+    df_train["true_time"] = df_train["true_time"].astype(int)
+    df_train["event"] = df_train["event"].astype(bool)
+    df_valid = df_valid.astype({col: float for col in df_valid.columns if col not in ["time", "true_time", "event"]})
+    df_valid["time"] = df_valid["time"].astype(int)
+    df_valid["true_time"] = df_valid["true_time"].astype(int)
+    df_valid["event"] = df_valid["event"].astype(bool)
+    df_test = df_test.astype({col: float for col in df_train.columns if col not in ["time", "true_time", "event"]})
+    df_test["time"] = df_test["time"].astype(int)
+    df_test["true_time"] = df_test["true_time"].astype(int)
+    df_test["event"] = df_test["event"].astype(bool)
+  
+    # Process data
+    data_train = df_train.drop(columns=["true_time"])
+    true_test_time = df_test.true_time.values
+    true_test_event = np.ones(df_test.shape[0])
+    data_valid = df_valid.drop(columns=["true_time"])
+    data_test = df_test.drop(columns=["true_time"])
+
+    # Format data
+    train_dict, valid_dict, test_dict = dict(), dict(), dict()
+    train_dict['X'] = torch.tensor(data_train.drop(columns=["time", "event"]).values.astype(float), device=device, dtype=dtype)
+    train_dict['T'] = torch.tensor(data_train['time'].values, device=device, dtype=dtype)
+    train_dict['E'] = torch.tensor(data_train['event'].values, device=device, dtype=dtype)
+    valid_dict['X'] = torch.tensor(data_valid.drop(columns=["time", "event"]).values, device=device, dtype=dtype)
+    valid_dict['T'] = torch.tensor(data_valid['time'].values, device=device, dtype=dtype)
+    valid_dict['E'] = torch.tensor(data_valid['event'].values, device=device, dtype=dtype)
+    test_dict['X'] = torch.tensor(data_test.drop(columns=["time", "event"]).values, device=device, dtype=dtype)
+    test_dict['T'] = torch.tensor(data_test['time'].values, device=device, dtype=dtype)
+    test_dict['E'] = torch.tensor(data_test['event'].values, device=device, dtype=dtype)
+    n_features = train_dict['X'].shape[1]
+    n_samples = train_dict['X'].shape[0]
+    X_train = pd.DataFrame(train_dict['X'].cpu().numpy(), columns=[f'X{i}' for i in range(n_features)])
+    X_valid = pd.DataFrame(valid_dict['X'].cpu().numpy(), columns=[f'X{i}' for i in range(n_features)])
+    X_test = pd.DataFrame(test_dict['X'].cpu().numpy(), columns=[f'X{i}' for i in range(n_features)])
+    y_train = convert_to_structured(train_dict['T'].cpu().numpy(), train_dict['E'].cpu().numpy())
+    y_valid = convert_to_structured(valid_dict['T'].cpu().numpy(), valid_dict['E'].cpu().numpy())
+    y_test = convert_to_structured(test_dict['T'].cpu().numpy(), test_dict['E'].cpu().numpy())
+    
+    # Make time bins
+    time_bins = make_time_bins(train_dict['T'].cpu(), event=train_dict['E'].cpu(), dtype=dtype).to(device)
+    time_bins = torch.cat((torch.tensor([0]).to(device), time_bins))
+    
+    # Estimate theta on the new dataset
+    dep_model1 = Weibull_log_linear(n_features, dtype=dtype, device=device) # censoring model
+    dep_model2 = Weibull_log_linear(n_features, dtype=dtype, device=device) # event model
+    if copula_name == "clayton":
+        copula = Clayton_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
+    elif copula_name == "frank":
+        copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
+    dep_model1, dep_model2, copula = train_copula_model(dep_model1, dep_model2, train_dict,
+                                                        valid_dict, copula=copula, n_epochs=100000,
+                                                        patience=1000, lr=1e-3, batch_size=n_samples, verbose=True)
+    copula_theta = float(copula.parameters()[0][0])
+    print(f"Copula theta: {copula_theta}")
+    
+    for model_name in MODELS:
+        # Reset seeds
+        np.random.seed(0)
+        torch.manual_seed(0)
+        torch.cuda.manual_seed_all(0)
+        random.seed(0)
+        
+        # Train base learners
+        if model_name == "coxph":
+            model = CoxPHFitter(penalizer=0.0001)
+            model.fit(data_train, duration_col='time', event_col='event')
+        elif model_name == "gbsa":
+            model = GradientBoostingSurvivalAnalysis(random_state=0)
+            model.fit(X_train, y_train)
+        elif model_name == "rsf":
+            model = RandomSurvivalForest(random_state=0)
+            model.fit(X_train, y_train)
+        elif model_name == "deepsurv":
+            config = dotdict(cfg.DEEPSURV_PARAMS)
+            model = DeepSurv(in_features=n_features, config=config)
+            data_train = pd.DataFrame(train_dict['X'].cpu().numpy())
+            data_train['time'] = train_dict['T'].cpu().numpy()
+            data_train['event'] = train_dict['E'].cpu().numpy()
+            data_valid = pd.DataFrame(valid_dict['X'].cpu().numpy())
+            data_valid['time'] = valid_dict['T'].cpu().numpy()
+            data_valid['event'] = valid_dict['E'].cpu().numpy()
+            model = train_deepsurv_model(model, data_train, data_valid, time_bins, config=config,
+                                         random_state=0, reset_model=True, device=device, dtype=dtype)
+        elif model_name == "deephit":
+            config = dotdict(cfg.DEEPHIT_PARAMS)
+            model = make_deephit_single(in_features=n_features, out_features=len(time_bins),
+                                        time_bins=time_bins.cpu().numpy(), device=device, config=config)
+            labtrans = model.label_transform
+            train_data, valid_data, out_features, duration_index = format_data_deephit_single(train_dict, valid_dict, labtrans)
+            model = train_deephit_model(model, train_data['X'], (train_data['T'], train_data['E']),
+                                        (valid_data['X'], (valid_data['T'], valid_data['E'])), config)
+        elif model_name == "mtlr":
+            data_train = X_train.copy()
+            data_train["time"] = pd.Series(y_train['time'])
+            data_train["event"] = pd.Series(y_train['event']).astype(int)
+            data_valid = X_valid.copy()
+            data_valid["time"] = pd.Series(y_valid['time'])
+            data_valid["event"] = pd.Series(y_valid['event']).astype(int)
+            config = dotdict(cfg.MTLR_PARAMS)
+            num_time_bins = len(time_bins)
+            model = mtlr(in_features=n_features, num_time_bins=num_time_bins, config=config)
+            model = train_mtlr_model(model, data_train, data_valid, time_bins.cpu().numpy(),
+                                     config, random_state=0, dtype=dtype,
+                                     reset_model=True, device=device)
+        else:
+            raise NotImplementedError()
+        
+        # Compute survival function
+        if model_name == "coxph":
+            survival_outputs = model.predict_survival_function(data_test, time_bins.cpu().numpy()).T
+        elif model_name in ["gbsa", "rsf"]:
+            survival_outputs = model.predict_survival_function(X_test)
+            survival_outputs = np.row_stack([fn(time_bins.cpu().numpy()) for fn in survival_outputs])
+        elif model_name == "deepsurv":
+            survival_outputs, time_bins_deepsurv = make_deepsurv_prediction(model, test_dict['X'].to(device),
+                                                                            config=config, dtype=dtype)
+            spline = interp1d(time_bins_deepsurv.cpu().numpy(),
+                              survival_outputs.cpu().numpy(),
+                              kind='linear', fill_value='extrapolate')
+            survival_outputs = spline(time_bins.cpu().numpy())
+        elif model_name == "deephit":
+            survival_outputs = model.predict_surv(test_dict['X']).cpu().numpy()
+        elif model_name == "mtlr":
+            data_test = X_test.copy()
+            data_test["time"] = pd.Series(y_test['time'])
+            data_test["event"] = pd.Series(y_test['event']).astype('int')
+            mtlr_test_data = torch.tensor(data_test.drop(["time", "event"], axis=1).values,
+                                          dtype=dtype, device=device)
+            survival_outputs, _, _ = make_mtlr_prediction(model, mtlr_test_data, time_bins, config)
+            survival_outputs = survival_outputs[:, 1:].cpu().numpy()
+        else:
+            raise NotImplementedError()
+            
+        # Create true evaluator to calculate true metrics
+        true_evaluator = SurvivalEvaluator(survival_outputs, time_bins, true_test_time, true_test_event)
+        ci_true = true_evaluator.concordance()[0]
+        ibs_true = true_evaluator.integrated_brier_score(num_points=10, IPCW_weighted=False)
+        mae_true = true_evaluator.mae(method="Uncensored")
+        
+        # Calculate censored metrics
+        censored_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
+                                               data_train.time.values, data_train.event.values)
+        ci = censored_evaluator.concordance()[0]
+        ibs = censored_evaluator.integrated_brier_score(num_points=10)
+        mae_uncensored = censored_evaluator.mae(method="Uncensored")
+        mae_hinge = censored_evaluator.mae(method="Hinge")
+        mae_margin = censored_evaluator.mae(method="Margin")
+        mae_ipcwv1 = censored_evaluator.mae(method="IPCW-v1")
+        mae_ipcwv2 = censored_evaluator.mae(method="IPCW-v2")
+        mae_pseudo = censored_evaluator.mae(method="Pseudo_obs")
+
+        # Calculate dependent metrics
+        dep_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
+                                          data_train.time.values, data_train.event.values)
+        predicted_times = dep_evaluator.predict_time_from_curve(predict_median_survival_time)
+        ci_dep = ci_dependent(predicted_times, data_test.time.values, data_test.event.values,
+                            data_train.time.values, data_train.event.values, copula_name=copula_name,
+                            alpha=copula_theta)[0]
+        ibs_dep = ibs_dependent(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
+                                data_train.time.values, data_train.event.values, copula_name=copula_name,
+                                num_points=10, alpha=copula_theta)
+        mae_dep = mae_dependent(predicted_times, data_test.time.values, data_test.event.values,
+                                data_train.time.values, data_train.event.values, copula_name=copula_name,
+                                alpha=copula_theta)
+
+        # Save results
+        model_results = pd.DataFrame()
+        copula_ktau = theta_to_kendall_tau(copula_name, copula_theta)
+        result_row = pd.Series([seed, copula_name, dataset_name, strategy, copula_theta, copula_ktau,
+                                ci_true, ibs_true, mae_true, ci, ibs, mae_uncensored, mae_hinge, mae_margin,
+                                mae_ipcwv1, mae_ipcwv2, mae_pseudo, ci_dep, ibs_dep, mae_dep],
+                                index=["Seed", "Copula", "Dataset", "Strategy", "Theta", "KTau",
+                                       "CITrue", "IBSTrue", "MAETrue", "CI", "IBS", "MAEUncens",
+                                       "MAEHinge", "MAEMargin", "MAEIPCWV1", "MAEIPCWV2", "MAEPseudo",
+                                       "CIDep", "IBSDep", "MAEDep"])
+        model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
+            
+        # Save results
+        filename = f"{cfg.RESULTS_DIR}/dependent.csv"
+        if os.path.exists(filename):
+            results = pd.read_csv(filename)
+        else:
+            results = pd.DataFrame(columns=model_results.columns)
+        results = results.append(model_results, ignore_index=True)
+        results.to_csv(filename, index=False)

@@ -10,6 +10,54 @@ from utility.preprocessor import Preprocessor
 Numeric = Union[float, int, bool]
 NumericArrayLike = Union[List[Numeric], Tuple[Numeric], np.ndarray, pd.Series, pd.DataFrame, torch.Tensor]
 
+def encode_survival(
+        time: Union[float, int, NumericArrayLike],
+        event: Union[int, bool, NumericArrayLike],
+        bins: NumericArrayLike
+) -> torch.Tensor:
+    '''Courtesy of https://github.com/shi-ang/BNN-ISD/tree/main'''
+    # TODO this should handle arrays and (CUDA) tensors
+    if isinstance(time, (float, int, np.ndarray)):
+        time = np.atleast_1d(time)
+        time = torch.tensor(time)
+    if isinstance(event, (int, bool, np.ndarray)):
+        event = np.atleast_1d(event)
+        event = torch.tensor(event)
+
+    if isinstance(bins, np.ndarray):
+        bins = torch.tensor(bins)
+
+    try:
+        device = bins.device
+    except AttributeError:
+        device = "cpu"
+
+    time = np.clip(time, 0, bins.max())
+    # add extra bin [max_time, inf) at the end
+    y = torch.zeros((time.shape[0], bins.shape[0] + 1),
+                    dtype=torch.float,
+                    device=device)
+    # For some reason, the `right` arg in torch.bucketize
+    # works in the _opposite_ way as it does in numpy,
+    # so we need to set it to True
+    bin_idxs = torch.bucketize(time, bins, right=True)
+    for i, (bin_idx, e) in enumerate(zip(bin_idxs, event)):
+        if e == 1:
+            y[i, bin_idx] = 1
+        else:
+            y[i, bin_idx:] = 1
+    return y.squeeze()
+
+def reformat_survival(
+        dataset: pd.DataFrame,
+        time_bins: NumericArrayLike,
+        dtype: torch.dtype
+) -> (torch.Tensor, torch.Tensor):
+    '''Courtesy of https://github.com/shi-ang/BNN-ISD/tree/main'''
+    x = torch.tensor(dataset.drop(["time", "event"], axis=1).values, dtype=dtype)
+    y = encode_survival(dataset["time"].values, dataset["event"].values, time_bins)
+    return x, y
+
 def convert_to_structured(T, E):
     default_dtypes = {"names": ("event", "time"), "formats": ("bool", "i4")}
     concat = list(zip(E, T))

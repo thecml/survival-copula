@@ -15,7 +15,7 @@ def loss_function(model1, model2, data, copula=None):
         p1 = LOG(f1) + LOG(s2)
         p2 = LOG(f2) + LOG(s1)
     else:
-        S = torch.cat([s1.reshape(-1,1), s2.reshape(-1,1)], dim=1).clamp(0.001,0.999)
+        S = torch.cat([s1.reshape(-1,1), s2.reshape(-1,1)], dim=1).clamp(0.001, 0.999)
         p1 = LOG(f1) + LOG(copula.conditional_cdf("u", S))
         p2 = LOG(f2) + LOG(copula.conditional_cdf("v", S))
     p1[torch.isnan(p1)] = 0
@@ -72,7 +72,7 @@ def train_copula_model(model1, model2, train_data, val_data,
             for p in copula.parameters():
                 if p < 0.01:
                     with torch.no_grad():
-                        p = torch.clamp(p, 0.01, 100)
+                        copula.theta.data.fill_(0.01)
 
         # Validation phase
         with torch.no_grad():

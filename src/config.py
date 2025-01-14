@@ -132,3 +132,31 @@ DEEPSURV_PARAMS = {
     'early_stop': True,
     'patience': 10
 }
+
+MTLR_PARAMS = {
+    'verbose': False,
+    'lr': 0.001,
+    'c1': 0.01,
+    'num_epochs': 1000,
+    'dropout': 0.25,
+    'batch_size': 32,
+    'early_stop': True,
+    'patience': 10
+}
+
+DEEPHIT_PARAMS = {
+    'num_nodes_shared': [32],
+    'num_nodes_indiv': [32],
+    'batch_norm': True,
+    'verbose': False,
+    'dropout': 0.25,
+    'alpha': 0.2,
+    'sigma': 0.1,
+    'batch_size': 32,
+    'lr': 0.001,
+    'weight_decay': 0.01,
+    'eta_multiplier': 0.8,
+    'epochs': 1000,
+    'early_stop': True,
+    'patience': 10,
+}

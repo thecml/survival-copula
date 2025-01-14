@@ -327,6 +327,7 @@ class SupportDataLoader(BaseDataLoader):
         self.num_features = num_feats
         self.cat_features = []
         self.X = pd.DataFrame(data[num_feats], dtype=np.float64)
+        self.y = convert_to_structured(outcomes['time'], outcomes['event'])
         self.columns = self.X.columns
         self.n_events = 1
         

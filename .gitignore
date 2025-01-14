@@ -167,3 +167,4 @@ data/seer_processed.csv
 data/mimic.csv.gz
 data/support.feather
 data/metabric.feather
+results/dependent.csv

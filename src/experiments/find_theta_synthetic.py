@@ -44,9 +44,6 @@ if __name__ == "__main__":
         for key in ['X', 'T', 'E']:
             dataset[key] = dataset[key].to(device)
     
-    time_bins = make_time_bins(train_dict['T'].cpu(), event=None, dtype=dtype).to(device)
-    time_bins = torch.cat((torch.tensor([0]).to(device), time_bins))
-    
     # Estimate theta
     n_features = train_dict['X'].shape[1]
     dep_model1 = Weibull_log_linear(n_features, dtype=dtype, device=device) # censoring model
@@ -57,7 +54,7 @@ if __name__ == "__main__":
         copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
     dep_model1, dep_model2, copula = train_copula_model(dep_model1, dep_model2, train_dict,
                                                         valid_dict, copula=copula, n_epochs=10000,
-                                                        patience=1000, lr=1e-3, batch_size=1024, verbose=True)
+                                                        patience=1000, lr=1e-4, batch_size=1024, verbose=True)
     
     estimated_theta = float(copula.parameters()[0])
     estimated_k_tau = theta_to_kendall_tau(copula_name, estimated_theta)
