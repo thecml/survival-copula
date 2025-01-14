@@ -21,7 +21,7 @@ from scipy.interpolate import interp1d
 
 from models import Weibull_log_linear
 from strategies import combine_data_with_censor, make_synthetic_censoring
-from utility.survival import convert_to_structured, make_stratified_split, make_time_bins, theta_to_kendall_tau
+from utility.survival import convert_to_structured, make_stratified_split, make_time_bins, preprocess_data, theta_to_kendall_tau
 from trainer import train_copula_model, predict_survival_curve
 
 from sksurv.ensemble import GradientBoostingSurvivalAnalysis, RandomSurvivalForest
@@ -42,9 +42,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--copula_name', type=str, default="clayton")
-    parser.add_argument('--dataset_name', type=str, default='support')
-    parser.add_argument('--strategy', type=str, default='top_5')
+    parser.add_argument('--copula_name', type=str, default="frank")
+    parser.add_argument('--dataset_name', type=str, default='seer')
+    parser.add_argument('--strategy', type=str, default='random_25')
     
     args = parser.parse_args()
     seed = args.seed
@@ -53,8 +53,7 @@ if __name__ == "__main__":
     strategy = args.strategy
     
     # Load data
-    dl = get_data_loader(dataset_name).load_data()
-    num_features, cat_features = dl.get_features()
+    dl = get_data_loader(dataset_name).load_data(n_samples=10000)
     df_full = dl.get_data()
     
     # Drop censored rows
@@ -94,20 +93,27 @@ if __name__ == "__main__":
     true_test_event = np.ones(df_test.shape[0])
     data_valid = df_valid.drop(columns=["true_time"])
     data_test = df_test.drop(columns=["true_time"])
+    X_train = data_train.drop(columns=["time", "event"])
+    X_valid = data_valid.drop(columns=["time", "event"])
+    X_test = data_test.drop(columns=["time", "event"])
+    cat_features = X_train.select_dtypes(['object']).columns.tolist()
+    num_features = X_train.select_dtypes(include=np.number).columns.tolist()
+    X_train, X_valid, X_test = preprocess_data(X_train, X_valid, X_test, cat_features,
+                                               num_features, as_array=True)
 
     # Format data
     train_dict, valid_dict, test_dict = dict(), dict(), dict()
-    train_dict['X'] = torch.tensor(data_train.drop(columns=["time", "event"]).values.astype(float), device=device, dtype=dtype)
+    train_dict['X'] = torch.tensor(X_train, device=device, dtype=dtype)
     train_dict['T'] = torch.tensor(data_train['time'].values, device=device, dtype=dtype)
     train_dict['E'] = torch.tensor(data_train['event'].values, device=device, dtype=dtype)
-    valid_dict['X'] = torch.tensor(data_valid.drop(columns=["time", "event"]).values, device=device, dtype=dtype)
+    valid_dict['X'] = torch.tensor(X_valid, device=device, dtype=dtype)
     valid_dict['T'] = torch.tensor(data_valid['time'].values, device=device, dtype=dtype)
     valid_dict['E'] = torch.tensor(data_valid['event'].values, device=device, dtype=dtype)
-    test_dict['X'] = torch.tensor(data_test.drop(columns=["time", "event"]).values, device=device, dtype=dtype)
+    test_dict['X'] = torch.tensor(X_test, device=device, dtype=dtype)
     test_dict['T'] = torch.tensor(data_test['time'].values, device=device, dtype=dtype)
     test_dict['E'] = torch.tensor(data_test['event'].values, device=device, dtype=dtype)
-    n_features = train_dict['X'].shape[1]
     n_samples = train_dict['X'].shape[0]
+    n_features = train_dict['X'].shape[1]
     X_train = pd.DataFrame(train_dict['X'].cpu().numpy(), columns=[f'X{i}' for i in range(n_features)])
     X_valid = pd.DataFrame(valid_dict['X'].cpu().numpy(), columns=[f'X{i}' for i in range(n_features)])
     X_test = pd.DataFrame(test_dict['X'].cpu().numpy(), columns=[f'X{i}' for i in range(n_features)])
@@ -138,7 +144,7 @@ if __name__ == "__main__":
         torch.manual_seed(0)
         torch.cuda.manual_seed_all(0)
         random.seed(0)
-        
+
         # Train base learners
         if model_name == "coxph":
             model = CoxPHFitter(penalizer=0.0001)

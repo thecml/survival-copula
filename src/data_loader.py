@@ -172,6 +172,8 @@ class SeerDataLoader(BaseDataLoader):
         df = df.drop('Year of diagnosis', axis=1)
             
         self.X = df.drop(['duration', 'event_heart', 'event_breast'], axis=1)
+        self.y = convert_to_structured(df['duration'], df['event_breast'])
+        
         self.columns = list(self.X.columns)
         self.num_features = self._get_num_features(self.X)
         self.cat_features = self._get_cat_features(self.X)
