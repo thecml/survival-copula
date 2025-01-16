@@ -21,6 +21,7 @@ from scipy.interpolate import interp1d
 
 from models import Weibull_log_linear
 from strategies import combine_data_with_censor, make_synthetic_censoring
+from utility.preprocessor import Preprocessor
 from utility.survival import convert_to_structured, make_stratified_split, make_time_bins, preprocess_data, theta_to_kendall_tau
 from trainer import train_copula_model, predict_survival_curve
 
@@ -35,16 +36,15 @@ torch.set_default_dtype(dtype)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-#MODELS = ["coxph", "gbsa", "rsf", "deepsurv", "deephit", "mtlr"]
-MODELS = ["coxph"]
+MODELS = ["coxph", "gbsa", "rsf", "deepsurv", "deephit", "mtlr"]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--copula_name', type=str, default="frank")
-    parser.add_argument('--dataset_name', type=str, default='seer')
-    parser.add_argument('--strategy', type=str, default='random_25')
+    parser.add_argument('--dataset_name', type=str, default='flchain')
+    parser.add_argument('--strategy', type=str, default='top_5')
     
     args = parser.parse_args()
     seed = args.seed
@@ -53,8 +53,17 @@ if __name__ == "__main__":
     strategy = args.strategy
     
     # Load data
-    dl = get_data_loader(dataset_name).load_data(n_samples=10000)
-    df_full = dl.get_data()
+    dl = get_data_loader(dataset_name).load_data()
+    df_full = dl.get_data().reset_index(drop=True)
+    num_features, cat_features = dl.get_features()
+    
+    # Preprocess full dataset
+    preprocessor = Preprocessor(cat_feat_strat='mode', num_feat_strat='mean', scaling_strategy="standard")
+    transformer = preprocessor.fit(df_full.drop(['time', 'event'], axis=1),
+                                   cat_feats=cat_features, num_feats=num_features,
+                                   one_hot=True, fill_value=-1)
+    X = transformer.transform(df_full.drop(['time', 'event'], axis=1)).reset_index(drop=True)
+    df_full = pd.concat([X, df_full[['time', 'event']]], axis=1)
     
     # Drop censored rows
     df = df_full.drop(df_full[df_full.event == 0].index)
@@ -96,20 +105,16 @@ if __name__ == "__main__":
     X_train = data_train.drop(columns=["time", "event"])
     X_valid = data_valid.drop(columns=["time", "event"])
     X_test = data_test.drop(columns=["time", "event"])
-    cat_features = X_train.select_dtypes(['object']).columns.tolist()
-    num_features = X_train.select_dtypes(include=np.number).columns.tolist()
-    X_train, X_valid, X_test = preprocess_data(X_train, X_valid, X_test, cat_features,
-                                               num_features, as_array=True)
 
     # Format data
     train_dict, valid_dict, test_dict = dict(), dict(), dict()
-    train_dict['X'] = torch.tensor(X_train, device=device, dtype=dtype)
+    train_dict['X'] = torch.tensor(X_train.values, device=device, dtype=dtype)
     train_dict['T'] = torch.tensor(data_train['time'].values, device=device, dtype=dtype)
     train_dict['E'] = torch.tensor(data_train['event'].values, device=device, dtype=dtype)
-    valid_dict['X'] = torch.tensor(X_valid, device=device, dtype=dtype)
+    valid_dict['X'] = torch.tensor(X_valid.values, device=device, dtype=dtype)
     valid_dict['T'] = torch.tensor(data_valid['time'].values, device=device, dtype=dtype)
     valid_dict['E'] = torch.tensor(data_valid['event'].values, device=device, dtype=dtype)
-    test_dict['X'] = torch.tensor(X_test, device=device, dtype=dtype)
+    test_dict['X'] = torch.tensor(X_test.values, device=device, dtype=dtype)
     test_dict['T'] = torch.tensor(data_test['time'].values, device=device, dtype=dtype)
     test_dict['E'] = torch.tensor(data_test['event'].values, device=device, dtype=dtype)
     n_samples = train_dict['X'].shape[0]

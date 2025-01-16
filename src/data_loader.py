@@ -161,31 +161,33 @@ class SeerDataLoader(BaseDataLoader):
     """
     Data loader for SEER dataset
     """
-    def load_data(self, n_samples:int = None):
-        df = pd.read_csv(f'{cfg.DATA_DIR}/seer_processed.csv')
+    def load_data(self):
+        data = pd.read_csv(Path.joinpath(cfg.DATA_DIR, 'seer.csv'))
         
-        if n_samples:
-            df = df.sample(n=n_samples, random_state=0)
-            
-        # Select cohort of newly-diagnosed patients
-        df = df.loc[df['Year of diagnosis'] == 0]
-        df = df.drop('Year of diagnosis', axis=1)
-            
-        self.X = df.drop(['duration', 'event_heart', 'event_breast'], axis=1)
-        self.y = convert_to_structured(df['duration'], df['event_breast'])
+        data = data.loc[data['Survival Months'] > 0]
         
-        self.columns = list(self.X.columns)
+        numeric_rows = pd.to_numeric(data["Grade"], errors='coerce').notna()
+        data = data[numeric_rows]
+
+        outcomes = data.copy()
+        outcomes['event'] =  data['Status']
+        outcomes['time'] = data['Survival Months']
+        outcomes = outcomes[['event', 'time']]
+        outcomes.loc[outcomes['event'] == 'Alive', ['event']] = 0
+        outcomes.loc[outcomes['event'] == 'Dead', ['event']] = 1
+
+        data = data.drop(['Status', "Survival Months"], axis=1)
+
+        obj_cols = data.select_dtypes(['bool']).columns.tolist() \
+                + data.select_dtypes(['object']).columns.tolist()
+        for col in obj_cols:
+            data[col] = data[col].astype('object')
+
+        self.X = pd.DataFrame(data)
         self.num_features = self._get_num_features(self.X)
         self.cat_features = self._get_cat_features(self.X)
+        self.y = convert_to_structured(outcomes['time'], outcomes['event'])
 
-        encoded_events = np.zeros(len(df), dtype=int)
-        encoded_events[df['event_breast'] == 1] = 1 # event is death of breast cancer
-        encoded_events[df['event_heart'] == 1] = 0 # other event is censored
-
-        self.y_t = np.array(df['duration'])
-        self.y_e = encoded_events
-        self.n_events = 1
-        
         return self
     
     def split_data(self,
@@ -217,7 +219,7 @@ class MimicDataLoader(BaseDataLoader):
     """
     Data loader for MIMIC dataset
     """
-    def load_data(self, n_samples:int = None):
+    def load_data(self, n_samples:int = 10000):
         '''
         t and e order, followed by death
         '''
@@ -228,14 +230,12 @@ class MimicDataLoader(BaseDataLoader):
             df = df.sample(n=n_samples, random_state=0)
             
         df = df[(df['Age'] >= 60) & (df['Age'] <= 65)] # select cohort ages 60-65
-        
-        df = df[df['ARF_time'] > 0]
-        df = df[df['shock_time'] > 0]
         df = df[df['death_time'] > 0]
   
         columns_to_drop = [col for col in df.columns if
                            any(substring in col for substring in ['_event', '_time', 'hadm_id'])]
         self.X = df.drop(columns_to_drop, axis=1)
+        self.y = convert_to_structured(df['death_time'], df['death_event'])
         self.columns = list(self.X.columns)
         self.num_features = self._get_num_features(self.X)
         self.cat_features = self._get_cat_features(self.X)
@@ -288,9 +288,6 @@ class MetabricDataLoader(BaseDataLoader):
 
         self.num_features = num_feats
         self.cat_features = []
-        
-        cols_standardize = ['x0', 'x1', 'x2', 'x3', 'x8'] # TODO Move this
-        data[cols_standardize] = data[cols_standardize].apply(lambda x: (x - x.mean()) / x.std())
                     
         self.X = pd.DataFrame(data[num_feats], dtype=np.float64)
         self.y = convert_to_structured(outcomes['time'], outcomes['event'])
@@ -370,8 +367,10 @@ class AidsDataLoader(BaseDataLoader):
         self.X = pd.DataFrame(X)
 
         self.y = convert_to_structured(y['time'], y['censor'])
-        self.num_features = self._get_num_features(self.X)
-        self.cat_features = self._get_cat_features(self.X)
+        self.num_features = ['age', 'cd4', 'hemophil', 'ivdrug', 'karnof',
+                             'priorzdv', 'raceth', 'sex', 'strat2', 'tx',
+                             'txgrp']
+        self.cat_features = []
         return self
     
     def split_data(self,
@@ -393,8 +392,8 @@ class GbsgDataLoader(BaseDataLoader):
 
         self.X = pd.DataFrame(X)
         self.y = convert_to_structured(y['time'], y['cens'])
-        self.num_features = self._get_num_features(self.X)
-        self.cat_features = self._get_cat_features(self.X)
+        self.num_features = ['age', 'estrec', 'pnodes', 'progrec', 'tsize']
+        self.cat_features = ['horTh', 'menostat', 'tgrade']
         return self
     
     def split_data(self,
@@ -416,8 +415,8 @@ class WhasDataLoader(BaseDataLoader):
 
         self.X = pd.DataFrame(X)
         self.y = convert_to_structured(y['lenfol'], y['fstat'])
-        self.num_features = self._get_num_features(self.X)
-        self.cat_features = self._get_cat_features(self.X)
+        self.num_features = list(self.X.columns)
+        self.cat_features = []
         return self
 
     def split_data(self,
@@ -435,17 +434,17 @@ class FlchainDataLoader(BaseDataLoader):
         X['time'] = y['futime']
 
         X = X.loc[X['time'] > 0]
-        X = X.drop(['event', 'time'], axis=1).reset_index(drop=True)
+        X_data = X.drop(['event', 'time'], axis=1).reset_index(drop=True)
 
-        obj_cols = X.select_dtypes(['bool']).columns.tolist() \
-                   + X.select_dtypes(['object']).columns.tolist()
+        obj_cols = X_data.select_dtypes(['bool']).columns.tolist() \
+                   + X_data.select_dtypes(['object']).columns.tolist()
         for col in obj_cols:
-            X[col] = X[col].astype('object')
+            X_data[col] = X_data[col].astype('object')
 
-        self.X = pd.DataFrame(X)
+        self.X = pd.DataFrame(X_data)
         self.y = convert_to_structured(X['time'], X['event'])
-        self.num_features = self._get_num_features(self.X)
-        self.cat_features = self._get_cat_features(self.X)
+        self.num_features = ['age', 'creatinine', 'kappa', 'lambda', 'sample.yr']
+        self.cat_features = ['chapter', 'flc.grp', 'mgus', 'sex']
         return self
 
     def split_data(self,
