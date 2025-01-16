@@ -121,14 +121,43 @@ mimic_features = ['I50',
  'death_event',
  'death_time']
 
+COXPH_PARAMS = {
+    'alpha': 0,
+    'ties': 'breslow',
+    'n_iter': 100,
+    'tol': 1e-9
+}
+
+COXBOOST_PARAMS = {
+    'n_estimators': 100,
+    'learning_rate': 0.1,
+    'max_depth': 1,
+    'loss': 'coxph',
+    'min_samples_split': 10,
+    'min_samples_leaf': 5,
+    'max_features': 'sqrt',
+    'dropout_rate': 0.0,
+    'subsample': 0.8,
+    'seed': 0,
+    'test_size': 0.3,
+}
+
+RSF_PARAMS = {
+    'n_estimators': 100,
+    'max_depth': 1,
+    'min_samples_split': 10,
+    'min_samples_leaf': 5,
+    'max_features': 'sqrt',
+    "random_state": 0
+}
+
 DEEPSURV_PARAMS = {
-    'hidden_size': 32,
+    'hidden_size': 100,
     'verbose': False,
-    'lr': 0.005,
+    'lr': 0.001,
     'c1': 0.01,
     'num_epochs': 1000,
     'dropout': 0.25,
-    'batch_size': 32,
     'early_stop': True,
     'patience': 10
 }
@@ -142,21 +171,4 @@ MTLR_PARAMS = {
     'batch_size': 32,
     'early_stop': True,
     'patience': 10
-}
-
-DEEPHIT_PARAMS = {
-    'num_nodes_shared': [32],
-    'num_nodes_indiv': [32],
-    'batch_norm': True,
-    'verbose': False,
-    'dropout': 0.25,
-    'alpha': 0.2,
-    'sigma': 0.1,
-    'batch_size': 32,
-    'lr': 0.001,
-    'weight_decay': 0.01,
-    'eta_multiplier': 0.8,
-    'epochs': 1000,
-    'early_stop': True,
-    'patience': 10,
 }

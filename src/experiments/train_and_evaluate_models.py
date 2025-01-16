@@ -36,7 +36,7 @@ torch.set_default_dtype(dtype)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-MODELS = ["coxph", "gbsa", "rsf", "deepsurv", "deephit", "mtlr"]
+MODELS = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -256,10 +256,10 @@ if __name__ == "__main__":
         # Save results
         model_results = pd.DataFrame()
         copula_ktau = theta_to_kendall_tau(copula_name, copula_theta)
-        result_row = pd.Series([seed, copula_name, dataset_name, strategy, copula_theta, copula_ktau,
+        result_row = pd.Series([seed, model_name, copula_name, dataset_name, strategy, copula_theta, copula_ktau,
                                 ci_true, ibs_true, mae_true, ci, ibs, mae_uncensored, mae_hinge, mae_margin,
                                 mae_ipcwv1, mae_ipcwv2, mae_pseudo, ci_dep, ibs_dep, mae_dep],
-                                index=["Seed", "Copula", "Dataset", "Strategy", "Theta", "KTau",
+                                index=["Seed", "ModelName", "Copula", "Dataset", "Strategy", "Theta", "KTau",
                                        "CITrue", "IBSTrue", "MAETrue", "CI", "IBS", "MAEUncens",
                                        "MAEHinge", "MAEMargin", "MAEIPCWV1", "MAEIPCWV2", "MAEPseudo",
                                        "CIDep", "IBSDep", "MAEDep"])
