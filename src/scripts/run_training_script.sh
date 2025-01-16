@@ -1,0 +1,27 @@
+#!/bin/bash
+
+base_path=$(dirname "$0")            # relative
+base_path=$(cd "$MY_PATH" && pwd)    # absolutized and normalized
+if [[ -z "$base_path" ]] ; then  # error; for some reason, the path is not accessible
+  # to the script (e.g. permissions re-evaled after suid)
+  exit 1  # fail
+fi
+echo "$base_path"
+
+results_path=$base_path/../results/dependent.csv
+if [ -f "$results_path" ]; then
+  rm $results_path
+fi
+
+seeds=(0)
+dataset_names=('seer' 'metabric' 'support' 'gbsg' 'aids' 'whas' 'flchain')
+strategies=('original' 'top_1' 'top_5', 'top_10', 'random_25' 'random_50' 'random_75')
+
+for seed in "${seeds[@]}"; do
+    for dataset_name in "${dataset_names[@]}"; do
+        for strategy in "${strategies[@]}"; do
+            echo "Running with seed=$seed, dataset_name=$dataset_name, strategy=$strategy"
+            python3 $base_path/../src/experiments/train_and_evaluate_models.py --seed "$seed" --dataset_name "$dataset_name" --strategy "$strategy"
+        done
+    done
+done
