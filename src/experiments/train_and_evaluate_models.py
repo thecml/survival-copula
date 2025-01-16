@@ -43,7 +43,7 @@ if __name__ == "__main__":
     
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--copula_name', type=str, default="frank")
-    parser.add_argument('--dataset_name', type=str, default='flchain')
+    parser.add_argument('--dataset_name', type=str, default='aids')
     parser.add_argument('--strategy', type=str, default='top_5')
     
     args = parser.parse_args()

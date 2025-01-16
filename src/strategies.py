@@ -66,9 +66,8 @@ def make_synthetic_censoring(strategy: str,
         df_all_copy.event = 1 - df_all_copy.event
         all_features = df_all_copy.drop(columns=['time', 'event']).columns # Exclude time and event columns
         random_25 = np.random.choice(all_features, size=int(len(all_features) * 0.25), replace=False) # Random selection
-        df_subset = df_all_copy[['time', 'event'] + list(random_25)]
         cph_new = CoxPHFitter()
-        cph_new.fit(df_subset, duration_col='time', event_col='event')
+        cph_new.fit(df_all_copy, duration_col='time', event_col='event')
         censor_curves = cph_new.predict_survival_function(df_event)
         uniq_times = censor_curves.index.values
         censor_cdf = 1 - censor_curves.values.T
@@ -85,9 +84,8 @@ def make_synthetic_censoring(strategy: str,
         cph.fit(df_all_copy, duration_col='time', event_col='event')
         all_features = df_all_copy.drop(columns=['time', 'event']).columns # Exclude time and event columns
         random_50 = np.random.choice(all_features, size=int(len(all_features) * 0.5), replace=False) # Random selection
-        df_subset = df_all_copy[['time', 'event'] + list(random_50)]
         cph_new = CoxPHFitter()
-        cph_new.fit(df_subset, duration_col='time', event_col='event')
+        cph_new.fit(df_all_copy, duration_col='time', event_col='event')
         censor_curves = cph_new.predict_survival_function(df_event)
         uniq_times = censor_curves.index.values
         censor_cdf = 1 - censor_curves.values.T
@@ -104,9 +102,8 @@ def make_synthetic_censoring(strategy: str,
         cph.fit(df_all_copy, duration_col='time', event_col='event')
         all_features = df_all_copy.drop(columns=['time', 'event']).columns # Exclude time and event columns
         random_75 = np.random.choice(all_features, size=int(len(all_features) * 0.75), replace=False) # Random selection
-        df_subset = df_all_copy[['time', 'event'] + list(random_75)]
         cph_new = CoxPHFitter()
-        cph_new.fit(df_subset, duration_col='time', event_col='event')
+        cph_new.fit(df_all_copy, duration_col='time', event_col='event')
         censor_curves = cph_new.predict_survival_function(df_event)
         uniq_times = censor_curves.index.values
         censor_cdf = 1 - censor_curves.values.T
@@ -115,70 +112,6 @@ def make_synthetic_censoring(strategy: str,
         for i in range(censor_pdf.shape[0]):
             censor_times[i] = uniq_times[np.argmax(censor_pdf[i, :])] # use the max prob
         selected_features = list(random_75)
-    elif strategy == "high_corr":
-        df_all_copy = df_all.copy()
-        df_all_copy.event = 1 - df_all_copy.event
-        df_ft_only = df_all_copy.drop(columns=['time', 'event'])
-        corr_matrix = df_ft_only.corr(method='pearson')
-        corr_threshold = 0.5
-        high_corr_pairs = [(i, j, corr_matrix.loc[i, j]) 
-                           for i in corr_matrix.columns 
-                           for j in corr_matrix.columns 
-                           if i != j and abs(corr_matrix.loc[i, j]) > corr_threshold]
-        to_drop = set([i for i, j, _ in high_corr_pairs])
-        df_subset = df_all_copy.drop(to_drop, axis=1)
-        cph_new = CoxPHFitter()
-        cph_new.fit(df_subset, duration_col='time', event_col='event')
-        censor_curves = cph_new.predict_survival_function(df_event)
-        uniq_times = censor_curves.index.values
-        censor_cdf = 1 - censor_curves.values.T
-        censor_pdf = calculate_pdf(censor_cdf)
-        censor_times = np.empty(censor_pdf.shape[0])
-        for i in range(censor_pdf.shape[0]):
-            censor_times[i] = uniq_times[np.argmax(censor_pdf[i, :])] # use the max prob
-        selected_features = df_subset.columns
-    elif strategy == "weak_corr":
-        df_all_copy = df_all.copy()
-        df_all_copy.event = 1 - df_all_copy.event
-        df_ft_only = df_all_copy.drop(columns=['time', 'event'])
-        corr_matrix = df_ft_only.corr(method='pearson')
-        corr_threshold = 0.5
-        weak_corr_pairs = [(i, j, corr_matrix.loc[i, j]) 
-                           for i in corr_matrix.columns 
-                           for j in corr_matrix.columns 
-                           if i != j and abs(corr_matrix.loc[i, j]) < corr_threshold]
-        to_drop = set([i for i, j, _ in weak_corr_pairs])
-        df_subset = df_all_copy.drop(to_drop, axis=1)
-        cph_new = CoxPHFitter()
-        cph_new.fit(df_subset, duration_col='time', event_col='event')
-        censor_curves = cph_new.predict_survival_function(df_event)
-        uniq_times = censor_curves.index.values
-        censor_cdf = 1 - censor_curves.values.T
-        censor_pdf = calculate_pdf(censor_cdf)
-        censor_times = np.empty(censor_pdf.shape[0])
-        for i in range(censor_pdf.shape[0]):
-            censor_times[i] = uniq_times[np.argmax(censor_pdf[i, :])] # use the max prob
-    elif strategy == "top_1":
-        df_all_copy = df_all.copy()
-        df_all_copy.event = 1 - df_all_copy.event
-        X = df_all_copy[df_all_copy.columns].drop(['time', 'event'], axis=1)
-        y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
-        gbsa = GradientBoostingSurvivalAnalysis(random_state=0)
-        gbsa.fit(X, y)
-        importances = gbsa.feature_importances_
-        feature_importances = pd.DataFrame({'Feature': X.columns, 'Importance': importances})
-        top_1_fts = list(feature_importances.sort_values(by='Importance', ascending=False)[:1]['Feature'])
-        df_subset = df_all_copy[['time', 'event'] + top_1_fts]
-        cph = CoxPHFitter()
-        cph.fit(df_subset, duration_col='time', event_col='event')
-        censor_curves = cph.predict_survival_function(df_event)
-        uniq_times = censor_curves.index.values
-        censor_cdf = 1 - censor_curves.values.T
-        censor_pdf = calculate_pdf(censor_cdf)
-        censor_times = np.empty(censor_pdf.shape[0])
-        for i in range(censor_pdf.shape[0]):
-            censor_times[i] = uniq_times[np.argmax(censor_pdf[i, :])] # use the max prob
-        selected_features = top_1_fts
     elif strategy == "top_5":
         df_all_copy = df_all.copy()
         df_all_copy.event = 1 - df_all_copy.event
@@ -189,9 +122,8 @@ def make_synthetic_censoring(strategy: str,
         importances = gbsa.feature_importances_
         feature_importances = pd.DataFrame({'Feature': X.columns, 'Importance': importances})
         top_5_fts = list(feature_importances.sort_values(by='Importance', ascending=False)[:5]['Feature'])
-        df_subset = df_all_copy[['time', 'event'] + top_5_fts]
         cph = CoxPHFitter()
-        cph.fit(df_subset, duration_col='time', event_col='event')
+        cph.fit(df_all_copy, duration_col='time', event_col='event') # use all the features
         censor_curves = cph.predict_survival_function(df_event)
         uniq_times = censor_curves.index.values
         censor_cdf = 1 - censor_curves.values.T
@@ -210,9 +142,8 @@ def make_synthetic_censoring(strategy: str,
         importances = gbsa.feature_importances_
         feature_importances = pd.DataFrame({'Feature': X.columns, 'Importance': importances})
         top_10_fts = list(feature_importances.sort_values(by='Importance', ascending=False)[:10]['Feature'])
-        df_subset = df_all_copy[['time', 'event'] + top_10_fts]
         cph = CoxPHFitter()
-        cph.fit(df_subset, duration_col='time', event_col='event')
+        cph.fit(df_all_copy, duration_col='time', event_col='event') # use all the features
         censor_curves = cph.predict_survival_function(df_event)
         uniq_times = censor_curves.index.values
         censor_cdf = 1 - censor_curves.values.T
@@ -233,7 +164,7 @@ def make_synthetic_censoring(strategy: str,
         top_20_fts = list(feature_importances.sort_values(by='Importance', ascending=False)[:20]['Feature'])
         df_subset = df_all_copy[['time', 'event'] + top_20_fts]
         cph = CoxPHFitter()
-        cph.fit(df_subset, duration_col='time', event_col='event')
+        cph.fit(df_all_copy, duration_col='time', event_col='event') # use all the features
         censor_curves = cph.predict_survival_function(df_event)
         uniq_times = censor_curves.index.values
         censor_cdf = 1 - censor_curves.values.T
