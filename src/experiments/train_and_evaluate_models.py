@@ -139,7 +139,7 @@ if __name__ == "__main__":
         copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
     dep_model1, dep_model2, copula = train_copula_model(dep_model1, dep_model2, train_dict,
                                                         valid_dict, copula=copula, n_epochs=100000,
-                                                        patience=1000, lr=1e-3, batch_size=n_samples, verbose=True)
+                                                        patience=1000, lr=1e-3, batch_size=n_samples, verbose=False)
     copula_theta = float(copula.parameters()[0][0])
     print(f"Copula theta: {copula_theta}")
     
