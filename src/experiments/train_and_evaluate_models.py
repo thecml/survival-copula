@@ -43,7 +43,7 @@ if __name__ == "__main__":
     
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--copula_name', type=str, default="clayton")
-    parser.add_argument('--dataset_name', type=str, default='seer_stomach')
+    parser.add_argument('--dataset_name', type=str, default='gbsg')
     parser.add_argument('--strategy', type=str, default='original')
     
     args = parser.parse_args()
@@ -130,8 +130,6 @@ if __name__ == "__main__":
     time_bins = make_time_bins(train_dict['T'].cpu(), event=train_dict['E'].cpu(), dtype=dtype).to(device)
     time_bins = torch.cat((torch.tensor([0]).to(device), time_bins))
     
-    exit(0)
-    
     # Estimate theta on the new dataset
     dep_model1 = Weibull_log_linear(n_features, dtype=dtype, device=device) # censoring model
     dep_model2 = Weibull_log_linear(n_features, dtype=dtype, device=device) # event model
@@ -173,14 +171,6 @@ if __name__ == "__main__":
             data_valid['event'] = valid_dict['E'].cpu().numpy()
             model = train_deepsurv_model(model, data_train, data_valid, time_bins, config=config,
                                          random_state=0, reset_model=True, device=device, dtype=dtype)
-        elif model_name == "deephit":
-            config = dotdict(cfg.DEEPHIT_PARAMS)
-            model = make_deephit_single(in_features=n_features, out_features=len(time_bins),
-                                        time_bins=time_bins.cpu().numpy(), device=device, config=config)
-            labtrans = model.label_transform
-            train_data, valid_data, out_features, duration_index = format_data_deephit_single(train_dict, valid_dict, labtrans)
-            model = train_deephit_model(model, train_data['X'], (train_data['T'], train_data['E']),
-                                        (valid_data['X'], (valid_data['T'], valid_data['E'])), config)
         elif model_name == "mtlr":
             data_train = X_train.copy()
             data_train["time"] = pd.Series(y_train['time'])
@@ -210,8 +200,6 @@ if __name__ == "__main__":
                               survival_outputs.cpu().numpy(),
                               kind='linear', fill_value='extrapolate')
             survival_outputs = spline(time_bins.cpu().numpy())
-        elif model_name == "deephit":
-            survival_outputs = model.predict_surv(test_dict['X']).cpu().numpy()
         elif model_name == "mtlr":
             data_test = X_test.copy()
             data_test["time"] = pd.Series(y_test['time'])
