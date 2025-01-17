@@ -1,3 +1,4 @@
+import h5py
 import numpy as np
 import pandas as pd
 from abc import ABC, abstractmethod
@@ -11,6 +12,17 @@ from dgp import DGP_Weibull_linear, DGP_Weibull_nonlinear
 import config as cfg
 from pathlib import Path
 from sksurv.datasets import load_gbsg2, load_aids, load_whas500, load_flchain
+from collections import defaultdict
+
+def _make_df(data):
+    x = data['x']
+    t = data['t']
+    d = data['e']
+    colnames = ['x'+str(i) for i in range(x.shape[1])]
+    df = (pd.DataFrame(x, columns=colnames)
+          .assign(duration=t)
+          .assign(event=d))
+    return df
 
 class BaseDataLoader(ABC):
     """
@@ -63,22 +75,30 @@ class BaseDataLoader(ABC):
 def get_data_loader(dataset_name: str) -> BaseDataLoader:
     if dataset_name == "synthetic":
         return SingleEventSyntheticDataLoader()
-    elif dataset_name == "seer":
-        return SeerDataLoader()
-    elif dataset_name == "mimic":
-        return MimicDataLoader()
-    elif dataset_name == "metabric":
-        return MetabricDataLoader()
-    elif dataset_name == "support":
-        return SupportDataLoader()
-    elif dataset_name == "aids":
-        return AidsDataLoader()
     elif dataset_name == "gbsg":
         return GbsgDataLoader()
+    elif dataset_name == "metabric":
+        return MetabricDataLoader()
+    elif dataset_name == "mimic":
+        return MimicDataLoader()
+    elif dataset_name == "nacd":
+        return NacdDataLoader()
+    elif dataset_name == "support":
+        return SupportDataLoader()
     elif dataset_name == "whas":
         return WhasDataLoader()
-    elif dataset_name == "flchain":
-        return FlchainDataLoader()
+    elif dataset_name == "aids":
+        return AidsDataLoader()
+    elif dataset_name == "seer_brain":
+        return SeerBrainDataLoader()
+    elif dataset_name == "seer_breast":
+        return SeerBreastDataLoader()
+    elif dataset_name == "seer_liver":
+        return SeerLiverDataLoader()
+    elif dataset_name == "seer_prostate":
+        return SeerProstateDataLoader()
+    elif dataset_name == "seer_stomach":
+        return SeerStomachDataLoader()
     else:
         raise NotImplementedError()
 
@@ -157,92 +177,25 @@ class SingleEventSyntheticDataLoader(BaseDataLoader):
             
         return dicts[0], dicts[1], dicts[2]
 
-class SeerDataLoader(BaseDataLoader):
-    """
-    Data loader for SEER dataset
-    """
-    def load_data(self):
-        data = pd.read_csv(Path.joinpath(cfg.DATA_DIR, 'seer.csv'))
-        
-        data = data.loc[data['Survival Months'] > 0]
-        
-        numeric_rows = pd.to_numeric(data["Grade"], errors='coerce').notna()
-        data = data[numeric_rows]
-
-        outcomes = data.copy()
-        outcomes['event'] =  data['Status']
-        outcomes['time'] = data['Survival Months']
-        outcomes = outcomes[['event', 'time']]
-        outcomes.loc[outcomes['event'] == 'Alive', ['event']] = 0
-        outcomes.loc[outcomes['event'] == 'Dead', ['event']] = 1
-
-        data = data.drop(['Status', "Survival Months"], axis=1)
-
-        obj_cols = data.select_dtypes(['bool']).columns.tolist() \
-                + data.select_dtypes(['object']).columns.tolist()
-        for col in obj_cols:
-            data[col] = data[col].astype('object')
-
-        self.X = pd.DataFrame(data)
-        self.num_features = self._get_num_features(self.X)
-        self.cat_features = self._get_cat_features(self.X)
-        self.y = convert_to_structured(outcomes['time'], outcomes['event'])
-
-        return self
-    
-    def split_data(self,
-                train_size: float,
-                valid_size: float,
-                test_size: float,
-                dtype=torch.float64,
-                random_state=0):
-        df = pd.DataFrame(self.X)
-        df['event'] = self.y_e
-        df['time'] = self.y_t
-        
-        df_train, df_valid, df_test = make_stratified_split(df, stratify_colname='time', frac_train=train_size,
-                                                            frac_valid=valid_size, frac_test=test_size,
-                                                            random_state=random_state)
-        
-        dataframes = [df_train, df_valid, df_test]
-        dicts = []
-        for dataframe in dataframes:
-            data_dict = dict()
-            data_dict['X'] = dataframe.drop(['event', 'time'], axis=1).to_numpy()
-            data_dict['E'] = torch.tensor(dataframe['event'].to_numpy(dtype=np.float64),dtype=dtype)
-            data_dict['T'] = torch.tensor(dataframe['time'].to_numpy(dtype=np.float64), dtype=dtype)
-            dicts.append(data_dict)
-            
-        return dicts[0], dicts[1], dicts[2]
-
 class MimicDataLoader(BaseDataLoader):
     """
     Data loader for MIMIC dataset
     """
-    def load_data(self, n_samples:int = 10000):
+    def load_data(self, n_samples:int = None):
         '''
         t and e order, followed by death
         '''
-        df = pd.read_csv(Path.joinpath(cfg.DATA_DIR, 'mimic.csv.gz'), compression='gzip', index_col=0)
-        df = df[cfg.mimic_features] # select only best features
+        path = Path.joinpath(cfg.DATA_DIR, "mimic_all_causes.csv")
+        data = pd.read_csv(path)
+        skip_cols = ['event', 'is_male', 'time', 'is_white', 'renal', 'cns', 'coagulation', 'cardiovascular']
+        cols_standardize = list(set(data.columns.to_list()).symmetric_difference(skip_cols))
         
-        if n_samples:
-            df = df.sample(n=n_samples, random_state=0)
-            
-        df = df[(df['Age'] >= 60) & (df['Age'] <= 65)] # select cohort ages 60-65
-        df = df[df['death_time'] > 0]
-  
-        columns_to_drop = [col for col in df.columns if
-                           any(substring in col for substring in ['_event', '_time', 'hadm_id'])]
-        self.X = df.drop(columns_to_drop, axis=1)
-        self.y = convert_to_structured(df['death_time'], df['death_event'])
+        self.num_features = cols_standardize
+        self.cat_features = ['is_male', 'is_white', 'renal', 'cns', 'coagulation', 'cardiovascular']
+        
+        self.X = data.drop(['event', 'time'], axis=1)
+        self.y = convert_to_structured(data['time'], data['event'])
         self.columns = list(self.X.columns)
-        self.num_features = self._get_num_features(self.X)
-        self.cat_features = self._get_cat_features(self.X)
-        
-        self.y_t = df[f'death_time'].values # use only death
-        self.y_e = df[f'death_event'].values
-        self.n_events = 1
         
         return self
 
@@ -252,25 +205,8 @@ class MimicDataLoader(BaseDataLoader):
                 test_size: float,
                 dtype=torch.float64,
                 random_state=0):
-        df = pd.DataFrame(self.X)
-        df['event'] = self.y_e
-        df['time'] = self.y_t
-        
-        df_train, df_valid, df_test = make_stratified_split(df, stratify_colname='time', frac_train=train_size,
-                                                            frac_valid=valid_size, frac_test=test_size,
-                                                            random_state=random_state)
-        
-        dataframes = [df_train, df_valid, df_test]
-        dicts = []
-        for dataframe in dataframes:
-            data_dict = dict()
-            data_dict['X'] = dataframe.drop(['event', 'time'], axis=1).to_numpy()
-            data_dict['E'] = torch.tensor(dataframe['event'].to_numpy(dtype=np.float64),dtype=dtype)
-            data_dict['T'] = torch.tensor(dataframe['time'].to_numpy(dtype=np.float64), dtype=dtype)
-            dicts.append(data_dict)
-            
-        return dicts[0], dicts[1], dicts[2]
-
+        raise NotImplementedError()
+    
 class MetabricDataLoader(BaseDataLoader):
     def load_data(self) -> None:
         data = pd.read_feather(Path.joinpath(cfg.DATA_DIR, 'metabric.feather')) 
@@ -283,13 +219,10 @@ class MetabricDataLoader(BaseDataLoader):
         outcomes['time'] = data['duration']
         outcomes = outcomes[['event', 'time']]
 
-        num_feats =  ['x0', 'x1', 'x2', 'x3', 'x8'] \
-                     + ['x4', 'x5', 'x6', 'x7']
-
-        self.num_features = num_feats
-        self.cat_features = []
+        self.num_features = ['x0', 'x1', 'x2', 'x3', 'x8']
+        self.cat_features = ['x4', 'x5', 'x6', 'x7']
                     
-        self.X = pd.DataFrame(data[num_feats], dtype=np.float64)
+        self.X = pd.DataFrame(data.drop(['duration', 'event'], axis=1), dtype=np.float64)
         self.y = convert_to_structured(outcomes['time'], outcomes['event'])
 
         return self
@@ -315,62 +248,25 @@ class SupportDataLoader(BaseDataLoader):
 
         data = data.loc[data['duration'] > 0]
 
-        outcomes = data.copy()
-        outcomes['event'] =  data['event']
-        outcomes['time'] = data['duration']
-        outcomes = outcomes[['event', 'time']]
-
-        num_feats =  ['x0', 'x1', 'x2', 'x3', 'x4', 'x5', 'x6',
-                      'x7', 'x8', 'x9', 'x10', 'x11', 'x12', 'x13']
-
-        self.num_features = num_feats
-        self.cat_features = []
-        self.X = pd.DataFrame(data[num_feats], dtype=np.float64)
-        self.y = convert_to_structured(outcomes['time'], outcomes['event'])
-        self.columns = self.X.columns
-        self.n_events = 1
-        
-        self.y_e = outcomes['event']
-        self.y_t = outcomes['time']
+        self.num_features = ['x0', 'x7', 'x8', 'x9', 'x10', 'x11', 'x12', 'x13']
+        self.cat_features = ['x1', 'x2', 'x3', 'x4', 'x5', 'x6']
+        self.X = pd.DataFrame(data.drop(['duration', 'event'], axis=1), dtype=np.float64)
+        self.y = convert_to_structured(data['duration'], data['event'])
 
         return self
     
     def split_data(self, train_size: float, valid_size: float,
                    test_size: float, dtype=torch.float64, random_state=0):
-        df = pd.DataFrame(self.X)
-        df['event'] = self.y_e
-        df['time'] = self.y_t
-    
-        df_train, df_valid, df_test = make_stratified_split(df, stratify_colname='time', frac_train=train_size,
-                                                            frac_valid=valid_size, frac_test=test_size,
-                                                            random_state=random_state)
-    
-        dataframes = [df_train, df_valid, df_test]
-        dicts = []
-        for dataframe in dataframes:
-            data_dict = dict()
-            data_dict['X'] = dataframe.drop(['event', 'time'], axis=1).to_numpy()
-            data_dict['E'] = torch.tensor(dataframe['event'].to_numpy(dtype=np.float64),dtype=dtype)
-            data_dict['T'] = torch.tensor(dataframe['time'].to_numpy(dtype=np.float64), dtype=dtype)
-            dicts.append(data_dict)
-            
-        return dicts[0], dicts[1], dicts[2]
+        raise NotImplementedError()
 
 class AidsDataLoader(BaseDataLoader):
     def load_data(self) -> None:
         X, y = load_aids()
 
-        obj_cols = X.select_dtypes(['bool']).columns.tolist() \
-                   + X.select_dtypes(['object']).columns.tolist()
-        for col in obj_cols:
-            X[col] = X[col].astype('category')
         self.X = pd.DataFrame(X)
-
         self.y = convert_to_structured(y['time'], y['censor'])
-        self.num_features = ['age', 'cd4', 'hemophil', 'ivdrug', 'karnof',
-                             'priorzdv', 'raceth', 'sex', 'strat2', 'tx',
-                             'txgrp']
-        self.cat_features = []
+        self.num_features = ['age', 'cd4', 'karnof', 'priorzdv']
+        self.cat_features = ['hemophil', 'ivdrug', 'raceth', 'sex', 'strat2', 'tx', 'txgrp']
         return self
     
     def split_data(self,
@@ -383,19 +279,18 @@ class AidsDataLoader(BaseDataLoader):
 
 class GbsgDataLoader(BaseDataLoader):
     def load_data(self) -> BaseDataLoader:
-        X, y = load_gbsg2()
-
-        obj_cols = X.select_dtypes(['bool']).columns.tolist() \
-                   + X.select_dtypes(['object']).columns.tolist()
-        for col in obj_cols:
-            X[col] = X[col].astype('category')
-
-        self.X = pd.DataFrame(X)
-        self.y = convert_to_structured(y['time'], y['cens'])
-        self.num_features = ['age', 'estrec', 'pnodes', 'progrec', 'tsize']
-        self.cat_features = ['horTh', 'menostat', 'tgrade']
+        cols_to_drop = ['pid']
+        path = Path.joinpath(cfg.DATA_DIR, 'gbsg.csv')
+        data = pd.read_csv(path).drop(cols_to_drop, axis=1).rename(
+            columns={"status": "event", "rfstime": "time"})
+        
+        self.X = pd.DataFrame(data.drop(['event', 'time'], axis=1))
+        self.y = convert_to_structured(data['time'], data['event'])
+        self.num_features = ['age', 'size', 'grade', 'nodes', 'pgr', 'er']
+        self.cat_features = ['meno', 'hormon']
+        
         return self
-    
+
     def split_data(self,
                 train_size: float,
                 valid_size: float,
@@ -405,18 +300,80 @@ class GbsgDataLoader(BaseDataLoader):
         raise NotImplementedError()
 
 class WhasDataLoader(BaseDataLoader):
+    """
+    Worcester Heart Attack Study dataset with 1638 samples and 6 covariates.
+    Downloaded from https://github.com/sysucc-ailab/RankDeepSurv/tree/master/data/WHAS
+    """
     def load_data(self) -> None:
-        X, y = load_whas500()
+        path = Path.joinpath(cfg.DATA_DIR, "whas_train_test.h5")
+        data = defaultdict(dict)
+        with h5py.File(path) as f:
+            for ds in f:
+                for array in f[ds]:
+                    data[ds][array] = f[ds][array][:]
+        train = _make_df(data['train'])
+        test = _make_df(data['test'])
+        df = pd.concat([train, test]).reset_index(drop=True).rename(columns={"duration": "time"})
 
-        obj_cols = X.select_dtypes(['bool']).columns.tolist() \
-                   + X.select_dtypes(['object']).columns.tolist()
-        for col in obj_cols:
-            X[col] = X[col].astype('category')
+        self.X = pd.DataFrame(df.drop(['time', 'event'], axis=1))
+        self.y = convert_to_structured(df['time'], df['event'])
+        self.num_features = ['x1', 'x3']
+        self.cat_features = ['x0', 'x2', 'x4', 'x5']
+        
+        return self
 
-        self.X = pd.DataFrame(X)
-        self.y = convert_to_structured(y['lenfol'], y['fstat'])
-        self.num_features = list(self.X.columns)
-        self.cat_features = []
+    def split_data(self,
+                train_size: float,
+                valid_size: float,
+                test_size: float,
+                dtype=torch.float64,
+                random_state=0):
+        raise NotImplementedError()
+    
+class NacdDataLoader(BaseDataLoader):
+    def load_data(self) -> None:
+        cols_to_drop = ['PERFORMANCE_STATUS', 'STAGE_NUMERICAL', 'AGE65']
+        path = Path.joinpath(cfg.DATA_DIR, "nacd_full.csv")
+        data = pd.read_csv(path).drop(cols_to_drop, axis=1).rename(columns={"delta": "event"})
+
+        data = data.drop(data[data["time"] <= 0].index)  # remove patients with negative or zero survival time
+        data.reset_index(drop=True, inplace=True)
+        
+        self.X = pd.DataFrame(data.drop(['time', 'event'], axis=1))
+        self.y = convert_to_structured(data['time'], data['event'])
+        self.num_features = ['BOX1_SCORE', 'BOX2_SCORE', 'BOX3_SCORE', 'BMI', 'WEIGHT_CHANGEPOINT',
+                             'AGE', 'GRANULOCYTES', 'LDH_SERUM', 'LYMPHOCYTES',
+                             'PLATELET', 'WBC_COUNT', 'CALCIUM_SERUM', 'HGB', 'CREATININE_SERUM', 'ALBUMIN']
+        feature_cols = data.drop(['time', 'event'], axis=1).columns.to_list()
+        self.cat_features = list(set(feature_cols).symmetric_difference(self.num_features))
+
+        return self
+
+    def split_data(self,
+                train_size: float,
+                valid_size: float,
+                test_size: float,
+                dtype=torch.float64,
+                random_state=0):
+        raise NotImplementedError()
+    
+class SeerBrainDataLoader(BaseDataLoader):
+    def load_data(self, n_samples=10000) -> None:
+        path = Path.joinpath(cfg.DATA_DIR, "seer_brain.csv")
+        data = pd.read_csv(path).rename(columns={"Survival months": "time"}).sample(n_samples)
+        data = data.drop(data[data["time"] <= 0].index)  # remove patients with negative or zero survival time
+        data.reset_index(drop=True, inplace=True)
+
+        skip_cols = ['event', 'time', 'Sex', 'Behavior recode for analysis',
+                    'SEER historic stage A (1973-2015)', 'RX Summ--Scope Reg LN Sur (2003+)']
+        cols_standardize = list(set(data.columns.to_list()).symmetric_difference(skip_cols))
+        
+        self.X = pd.DataFrame(data.drop(['time', 'event'], axis=1))
+        self.y = convert_to_structured(data['time'], data['event'])
+        self.num_features = cols_standardize
+        feature_cols = data.drop(['time', 'event'], axis=1).columns.to_list()
+        self.cat_features = list(set(feature_cols).symmetric_difference(self.num_features))
+
         return self
 
     def split_data(self,
@@ -427,24 +384,100 @@ class WhasDataLoader(BaseDataLoader):
                 random_state=0):
         raise NotImplementedError()
 
-class FlchainDataLoader(BaseDataLoader):
-    def load_data(self) -> None:
-        X, y = load_flchain()
-        X['event'] = y['death']
-        X['time'] = y['futime']
+class SeerBreastDataLoader(BaseDataLoader):
+    def load_data(self, n_samples=10000) -> None:
+        path = Path.joinpath(cfg.DATA_DIR, "seer_breast.csv")
+        data = pd.read_csv(path).rename(columns={"Survival months": "time"}).sample(n_samples)
+        data = data.drop(data[data["time"] <= 0].index)  # remove patients with negative or zero survival time
+        data.reset_index(drop=True, inplace=True)
 
-        X = X.loc[X['time'] > 0]
-        X_data = X.drop(['event', 'time'], axis=1).reset_index(drop=True)
+        skip_cols = ['event', 'time', 'RX Summ--Scope Reg LN Sur (2003+)']
+        cols_standardize = list(set(data.columns.to_list()).symmetric_difference(skip_cols))
 
-        obj_cols = X_data.select_dtypes(['bool']).columns.tolist() \
-                   + X_data.select_dtypes(['object']).columns.tolist()
-        for col in obj_cols:
-            X_data[col] = X_data[col].astype('object')
+        self.X = pd.DataFrame(data.drop(['time', 'event'], axis=1))
+        self.y = convert_to_structured(data['time'], data['event'])
+        self.num_features = cols_standardize
+        feature_cols = data.drop(['time', 'event'], axis=1).columns.to_list()
+        self.cat_features = list(set(feature_cols).symmetric_difference(self.num_features))
 
-        self.X = pd.DataFrame(X_data)
-        self.y = convert_to_structured(X['time'], X['event'])
-        self.num_features = ['age', 'creatinine', 'kappa', 'lambda', 'sample.yr']
-        self.cat_features = ['chapter', 'flc.grp', 'mgus', 'sex']
+        return self
+
+    def split_data(self,
+                train_size: float,
+                valid_size: float,
+                test_size: float,
+                dtype=torch.float64,
+                random_state=0):
+        raise NotImplementedError()
+
+class SeerLiverDataLoader(BaseDataLoader):
+    def load_data(self, n_samples=10000) -> None:
+        path = Path.joinpath(cfg.DATA_DIR, "seer_liver.csv")
+        data = pd.read_csv(path).rename(columns={"Survival months": "time"}).sample(n_samples)
+        data = data.drop(data[data["time"] <= 0].index)  # remove patients with negative or zero survival time
+        data.reset_index(drop=True, inplace=True)
+
+        skip_cols = ['event', 'time', 'Sex']
+        cols_standardize = list(set(data.columns.to_list()).symmetric_difference(skip_cols))
+
+        self.X = pd.DataFrame(data.drop(['time', 'event'], axis=1))
+        self.y = convert_to_structured(data['time'], data['event'])
+        self.num_features = cols_standardize
+        feature_cols = data.drop(['time', 'event'], axis=1).columns.to_list()
+        self.cat_features = list(set(feature_cols).symmetric_difference(self.num_features))
+
+        return self
+
+    def split_data(self,
+                train_size: float,
+                valid_size: float,
+                test_size: float,
+                dtype=torch.float64,
+                random_state=0):
+        raise NotImplementedError()
+
+class SeerProstateDataLoader(BaseDataLoader):
+    def load_data(self, n_samples=10000) -> None:
+        path = Path.joinpath(cfg.DATA_DIR, "seer_prostate.csv")
+        data = pd.read_csv(path).rename(columns={"Survival months": "time"}).sample(n_samples)
+        data = data.drop(data[data["time"] <= 0].index)  # remove patients with negative or zero survival time
+        data.reset_index(drop=True, inplace=True)
+
+        skip_cols = ['event', 'time']
+        cols_standardize = list(set(data.columns.to_list()).symmetric_difference(skip_cols))
+
+        self.X = pd.DataFrame(data.drop(['time', 'event'], axis=1))
+        self.y = convert_to_structured(data['time'], data['event'])
+        self.num_features = cols_standardize
+        feature_cols = data.drop(['time', 'event'], axis=1).columns.to_list()
+        self.cat_features = list(set(feature_cols).symmetric_difference(self.num_features))
+
+        return self
+
+    def split_data(self,
+                train_size: float,
+                valid_size: float,
+                test_size: float,
+                dtype=torch.float64,
+                random_state=0):
+        raise NotImplementedError()
+    
+class SeerStomachDataLoader(BaseDataLoader):
+    def load_data(self, n_samples=10000) -> None:
+        path = Path.joinpath(cfg.DATA_DIR, "seer_stomach.csv")
+        data = pd.read_csv(path).rename(columns={"Survival months": "time"}).sample(n_samples)
+        data = data.drop(data[data["time"] <= 0].index)  # remove patients with negative or zero survival time
+        data.reset_index(drop=True, inplace=True)
+
+        skip_cols = ['event', 'time', 'Sex']
+        cols_standardize = list(set(data.columns.to_list()).symmetric_difference(skip_cols))
+        
+        self.X = pd.DataFrame(data.drop(['time', 'event'], axis=1))
+        self.y = convert_to_structured(data['time'], data['event'])
+        self.num_features = cols_standardize
+        feature_cols = data.drop(['time', 'event'], axis=1).columns.to_list()
+        self.cat_features = list(set(feature_cols).symmetric_difference(self.num_features))
+
         return self
 
     def split_data(self,

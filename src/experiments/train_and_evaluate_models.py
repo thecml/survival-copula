@@ -42,14 +42,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--copula_name', type=str, default="frank")
-    parser.add_argument('--dataset_name', type=str, default='aids')
-    parser.add_argument('--strategy', type=str, default='top_5')
+    parser.add_argument('--copula_name', type=str, default="clayton")
+    parser.add_argument('--dataset_name', type=str, default='seer_stomach')
+    parser.add_argument('--strategy', type=str, default='original')
     
     args = parser.parse_args()
     seed = args.seed
     copula_name = args.copula_name
-    dataset_name = args.dataset_name
+    dataset_name = args.dataset_name    
     strategy = args.strategy
     
     # Load data
@@ -129,6 +129,8 @@ if __name__ == "__main__":
     # Make time bins
     time_bins = make_time_bins(train_dict['T'].cpu(), event=train_dict['E'].cpu(), dtype=dtype).to(device)
     time_bins = torch.cat((torch.tensor([0]).to(device), time_bins))
+    
+    exit(0)
     
     # Estimate theta on the new dataset
     dep_model1 = Weibull_log_linear(n_features, dtype=dtype, device=device) # censoring model
