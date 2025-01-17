@@ -2,6 +2,7 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 import seaborn as sns
+import config as cfg
 
 from SurvivalEVAL.Evaluations.util import KaplanMeier
 
@@ -69,4 +70,9 @@ for idx in range(len(datasets), len(axes)):
 
 # Adjust layout
 plt.tight_layout()
+
+# Save the plot (optional)
+plt.savefig(f"{cfg.PLOTS_DIR}/event_distribution.pdf", format='pdf', bbox_inches='tight')
+
+# Show the plot
 plt.show()

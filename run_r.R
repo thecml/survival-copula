@@ -1,10 +1,11 @@
-#install.packages('compound.Cox')
-library('compound.Cox')
+if (!requireNamespace("compound.Cox", quietly = TRUE)) {
+  install.packages("compound.Cox")
+}
 
-#ns <- loadNamespace("compound.Cox")
-#ls(ns)
+library("compound.Cox")
 
-#print(deparse(get("CG.Clayton", envir = ns)))
+ns <- loadNamespace("compound.Cox")
 
-n = 1000
-print(n:1)
+ls(ns)
+
+print(deparse(get("CG.Clayton", envir = ns)))
