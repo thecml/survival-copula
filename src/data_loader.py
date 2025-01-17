@@ -181,12 +181,12 @@ class MimicDataLoader(BaseDataLoader):
     """
     Data loader for MIMIC dataset
     """
-    def load_data(self, n_samples:int = None):
+    def load_data(self, n_samples:int = 10000):
         '''
         t and e order, followed by death
         '''
         path = Path.joinpath(cfg.DATA_DIR, "mimic_all_causes.csv")
-        data = pd.read_csv(path)
+        data = pd.read_csv(path).sample(n_samples)
         skip_cols = ['event', 'is_male', 'time', 'is_white', 'renal', 'cns', 'coagulation', 'cardiovascular']
         cols_standardize = list(set(data.columns.to_list()).symmetric_difference(skip_cols))
         
