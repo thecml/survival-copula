@@ -110,4 +110,4 @@ def train_copula_model(model1, model2, train_data, val_data,
     model2.coeff = best_c2
     copula.theta = best_theta
     
-    return model1, model2, copula
+    return model1, model2, copula, min_val_loss

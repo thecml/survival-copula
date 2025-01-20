@@ -42,13 +42,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--copula_name', type=str, default="clayton")
     parser.add_argument('--dataset_name', type=str, default='gbsg')
     parser.add_argument('--strategy', type=str, default='original')
     
     args = parser.parse_args()
     seed = args.seed
-    copula_name = args.copula_name
     dataset_name = args.dataset_name    
     strategy = args.strategy
     
@@ -130,18 +128,28 @@ if __name__ == "__main__":
     time_bins = make_time_bins(train_dict['T'].cpu(), event=train_dict['E'].cpu(), dtype=dtype).to(device)
     time_bins = torch.cat((torch.tensor([0]).to(device), time_bins))
     
-    # Estimate theta on the new dataset
-    dep_model1 = Weibull_log_linear(n_features, dtype=dtype, device=device) # censoring model
-    dep_model2 = Weibull_log_linear(n_features, dtype=dtype, device=device) # event model
-    if copula_name == "clayton":
-        copula = Clayton_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
-    elif copula_name == "frank":
-        copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
-    dep_model1, dep_model2, copula = train_copula_model(dep_model1, dep_model2, train_dict,
-                                                        valid_dict, copula=copula, n_epochs=100000,
-                                                        patience=1000, lr=1e-3, batch_size=n_samples, verbose=False)
-    copula_theta = float(copula.parameters()[0][0])
-    print(f"Copula theta: {copula_theta}")
+    # Estimate theta on the new dataset and find the best copula
+    results_list = []
+    for copula_name in ['clayton', 'frank']:
+        dep_model1 = Weibull_log_linear(n_features, dtype=dtype, device=device) # censoring model
+        dep_model2 = Weibull_log_linear(n_features, dtype=dtype, device=device) # event model
+        if copula_name == "clayton":
+            copula = Clayton_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
+        elif copula_name == "frank":
+            copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
+        dep_model1, dep_model2, copula, min_val_loss= train_copula_model(dep_model1, dep_model2, train_dict,
+                                                                         valid_dict, copula=copula, n_epochs=100000,
+                                                                         patience=1000, lr=1e-3, batch_size=n_samples, verbose=False)
+        copula_theta = float(copula.parameters()[0][0])
+        k = sum(param.numel() for param in dep_model1.parameters())
+        k += sum(param.numel() for param in dep_model2.parameters())
+        k += sum(param.numel() for param in copula.parameters())
+        results_list.append({'copula_name': copula_name, 'copula_theta': copula_theta,
+                             'min_val_loss': min_val_loss, 'num_params': k})
+    results_df = pd.DataFrame(results_list)
+    results_df['AIC'] = 2*results_df['num_params'] + 2*results_df['min_val_loss'] # AIC
+    best_copula_name = results_df.loc[results_df['AIC'].idxmin()]['copula_name']
+    best_copula_theta = results_df.loc[results_df['AIC'].idxmin()]['copula_theta']
     
     for model_name in MODELS:
         # Reset seeds
@@ -234,18 +242,18 @@ if __name__ == "__main__":
                                           data_train.time.values, data_train.event.values)
         predicted_times = dep_evaluator.predict_time_from_curve(predict_median_survival_time)
         ci_dep = ci_dependent(predicted_times, data_test.time.values, data_test.event.values,
-                            data_train.time.values, data_train.event.values, copula_name=copula_name,
+                            data_train.time.values, data_train.event.values, copula_name=best_copula_name,
                             alpha=copula_theta)[0]
         ibs_dep = ibs_dependent(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                data_train.time.values, data_train.event.values, copula_name=copula_name,
+                                data_train.time.values, data_train.event.values, copula_name=best_copula_name,
                                 num_points=10, alpha=copula_theta)
         mae_dep = mae_dependent(predicted_times, data_test.time.values, data_test.event.values,
-                                data_train.time.values, data_train.event.values, copula_name=copula_name,
+                                data_train.time.values, data_train.event.values, copula_name=best_copula_name,
                                 alpha=copula_theta)
 
         # Save results
         model_results = pd.DataFrame()
-        result_row = pd.Series([seed, model_name, copula_name, dataset_name, strategy, copula_theta,
+        result_row = pd.Series([seed, model_name, best_copula_name, dataset_name, strategy, best_copula_theta,
                                 ci_true, ibs_true, mae_true, ci, ibs, mae_uncensored, mae_hinge, mae_margin,
                                 mae_ipcwv1, mae_ipcwv2, mae_pseudo, ci_dep, ibs_dep, mae_dep],
                                 index=["Seed", "ModelName", "Copula", "Dataset", "Strategy", "Theta",
