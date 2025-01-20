@@ -300,25 +300,13 @@ class GbsgDataLoader(BaseDataLoader):
         raise NotImplementedError()
 
 class WhasDataLoader(BaseDataLoader):
-    """
-    Worcester Heart Attack Study dataset with 1638 samples and 6 covariates.
-    Downloaded from https://github.com/sysucc-ailab/RankDeepSurv/tree/master/data/WHAS
-    """
     def load_data(self) -> None:
-        path = Path.joinpath(cfg.DATA_DIR, "whas_train_test.h5")
-        data = defaultdict(dict)
-        with h5py.File(path) as f:
-            for ds in f:
-                for array in f[ds]:
-                    data[ds][array] = f[ds][array][:]
-        train = _make_df(data['train'])
-        test = _make_df(data['test'])
-        df = pd.concat([train, test]).reset_index(drop=True).rename(columns={"duration": "time"})
+        X, y = load_whas500()
 
-        self.X = pd.DataFrame(df.drop(['time', 'event'], axis=1))
-        self.y = convert_to_structured(df['time'], df['event'])
-        self.num_features = ['x1', 'x3']
-        self.cat_features = ['x0', 'x2', 'x4', 'x5']
+        self.X = pd.DataFrame(X)
+        self.y = convert_to_structured(y['lenfol'], y['fstat'])
+        self.num_features = ['age', 'bmi', 'diasbp', 'hr', 'los', 'sysbp']
+        self.cat_features = ['afb', 'av3', 'chf', 'cvd', 'gender', 'miord', 'mitype', 'sho']
         
         return self
 

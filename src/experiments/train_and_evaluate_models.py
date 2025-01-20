@@ -42,12 +42,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--dataset_name', type=str, default='gbsg')
+    parser.add_argument('--dataset_name', type=str, default='whas')
     parser.add_argument('--strategy', type=str, default='original')
     
     args = parser.parse_args()
     seed = args.seed
-    dataset_name = args.dataset_name    
+    dataset_name = args.dataset_name
     strategy = args.strategy
     
     # Load data
