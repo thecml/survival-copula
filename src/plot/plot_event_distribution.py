@@ -1,8 +1,13 @@
 import numpy as np
 import math
-import matplotlib.pyplot as plt
 import seaborn as sns
 import config as cfg
+
+matplotlib_style = 'default'
+import matplotlib.pyplot as plt; plt.style.use(matplotlib_style)
+plt.rcParams.update({'axes.labelsize': 'medium',
+                     'axes.titlesize': 'medium',
+                     'font.size': 14.0})
 
 from SurvivalEVAL.Evaluations.util import KaplanMeier
 
@@ -68,11 +73,6 @@ for idx, data_name in enumerate(datasets):
 for idx in range(len(datasets), len(axes)):
     fig.delaxes(axes[idx])
 
-# Adjust layout
 plt.tight_layout()
-
-# Save the plot (optional)
 plt.savefig(f"{cfg.PLOTS_DIR}/event_distribution.pdf", format='pdf', bbox_inches='tight')
-
-# Show the plot
 plt.show()

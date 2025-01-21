@@ -34,18 +34,23 @@ def predict_survival_curve(model, x_test, time_bins, truth=False):
 def train_copula_model(model1, model2, train_data, val_data,
                        n_epochs, patience=1000, batch_size=32, lr=1e-3,
                        verbose=False, copula=None):
-    
+    # Enable gradients for models
     model1.enable_grad()
     model2.enable_grad()
-    copula.enable_grad()
+    if copula is not None:
+        copula.enable_grad()
     
     min_val_loss = 1000
     copula_grad_multiplier = 1.0
     copula_grad_clip = 1.0
     
-    optimizer = torch.optim.Adam([{"params": model1.parameters(), "lr": lr},
-                                  {"params": model2.parameters(), "lr": lr},
-                                  {"params": copula.parameters(), "lr": lr}])
+    # Prepare optimizer
+    optimizer_params = [{"params": model1.parameters(), "lr": lr},
+                        {"params": model2.parameters(), "lr": lr}]
+    if copula is not None:
+        optimizer_params.append({"params": copula.parameters(), "lr": lr})
+    
+    optimizer = torch.optim.Adam(optimizer_params)
 
     # Create DataLoaders for mini-batching
     train_loader = DataLoader(TensorDataset(train_data['T'], train_data['X'], train_data['E']),
@@ -63,21 +68,24 @@ def train_copula_model(model1, model2, train_data, val_data,
             loss = loss_function(model1, model2, batch_data, copula)
             loss.backward()
 
-            for p in copula.parameters():
-                if p.grad is not None:
-                    p.grad = (p.grad * copula_grad_multiplier).clip(-1 * copula_grad_clip, 1 *copula_grad_clip)
-
-            optimizer.step()
-            
-            for p in copula.parameters():
-                if p < 0.01:
-                    with torch.no_grad():
-                        copula.theta.data.fill_(0.01)
+            # Handle copula gradients if copula is provided
+            if copula is not None:
+                for p in copula.parameters():
+                    if p.grad is not None:
+                        p.grad = (p.grad * copula_grad_multiplier).clip(
+                            -1 * copula_grad_clip, 1 * copula_grad_clip
+                        )
+                optimizer.step()
+                for p in copula.parameters():
+                    if p < 0.01:
+                        with torch.no_grad():
+                            copula.theta.data.fill_(0.01)
+            else:
+                optimizer.step()
 
         # Validation phase
         with torch.no_grad():
             val_loss = 0.0
-            
             for batch_idx, (T, X, E) in enumerate(val_loader):
                 batch_data = {'T': T, 'X': X, 'E': E}
                 val_loss += loss_function(model1, model2, batch_data, copula).item()
@@ -85,7 +93,8 @@ def train_copula_model(model1, model2, train_data, val_data,
             val_loss /= len(val_loader)
 
             if verbose and epoch % 100 == 0:
-                print(f"Epoch {epoch}, Validation Loss: {val_loss} - {copula.theta}")
+                copula_theta = copula.theta if copula is not None else None
+                print(f"Epoch {epoch}, Validation Loss: {val_loss} - Copula Theta: {copula_theta}")
 
             if not math.isnan(val_loss) and val_loss < min_val_loss:
                 stop_itr = 0
@@ -95,19 +104,22 @@ def train_copula_model(model1, model2, train_data, val_data,
                 best_mu2 = model2.mu.detach().clone()
                 best_sig1 = model1.sigma.detach().clone()
                 best_sig2 = model2.sigma.detach().clone()
-                best_theta = copula.theta.detach().clone()
+                best_theta = copula.theta.detach().clone() if copula is not None else None
                 min_val_loss = val_loss
             else:
                 stop_itr += 1
                 if stop_itr == patience:
                     break
 
+    # Restore best parameters
     model1.mu = best_mu1
     model2.mu = best_mu2
     model1.sigma = best_sig1
     model2.sigma = best_sig2
     model1.coeff = best_c1
     model2.coeff = best_c2
-    copula.theta = best_theta
-    
+    if copula is not None:
+        copula.theta = best_theta
+
     return model1, model2, copula, min_val_loss
+

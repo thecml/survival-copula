@@ -4,20 +4,17 @@ class dotdict(dict):
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
     
-def format_data_deephit_single(train_dict, valid_dict, labtrans):
-    train_dict_dh = dict()
-    train_dict_dh['X'] = train_dict['X'].cpu().numpy()
-    train_dict_dh['E'] = train_dict['E'].cpu().numpy()
-    train_dict_dh['T'] = train_dict['T'].cpu().numpy()
-    valid_dict_dh = dict()
-    valid_dict_dh['X'] = valid_dict['X'].cpu().numpy()
-    valid_dict_dh['E'] = valid_dict['E'].cpu().numpy()
-    valid_dict_dh['T'] = valid_dict['T'].cpu().numpy()
-    get_target = lambda data: (data['T'], data['E'])
-    y_train = labtrans.transform(*get_target(train_dict_dh))
-    y_valid = labtrans.transform(*get_target(valid_dict_dh))
-    out_features = len(labtrans.cuts)
-    duration_index = labtrans.cuts
-    train_data = {'X': train_dict_dh['X'], 'T': y_train[0], 'E': y_train[1]}
-    valid_data = {'X': valid_dict_dh['X'], 'T': y_valid[0], 'E': y_valid[1]}
-    return train_data, valid_data, out_features, duration_index
+def fix_types(df_train, df_valid, df_test):
+    df_train = df_train.astype({col: float for col in df_train.columns if col not in ["time", "true_time", "event"]})
+    df_train["time"] = df_train["time"].astype(int)
+    df_train["true_time"] = df_train["true_time"].astype(int)
+    df_train["event"] = df_train["event"].astype(bool)
+    df_valid = df_valid.astype({col: float for col in df_valid.columns if col not in ["time", "true_time", "event"]})
+    df_valid["time"] = df_valid["time"].astype(int)
+    df_valid["true_time"] = df_valid["true_time"].astype(int)
+    df_valid["event"] = df_valid["event"].astype(bool)
+    df_test = df_test.astype({col: float for col in df_train.columns if col not in ["time", "true_time", "event"]})
+    df_test["time"] = df_test["time"].astype(int)
+    df_test["true_time"] = df_test["true_time"].astype(int)
+    df_test["event"] = df_test["event"].astype(bool)
+    return df_train, df_valid, df_test

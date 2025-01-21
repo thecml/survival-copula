@@ -2,8 +2,7 @@ import argparse
 import os
 import random
 import torch
-from metrics import ci_dependent, ibs_dependent
-from misc.calculate_mae_dependent import mae_dependent
+from metrics import ci_dependent, ibs_dependent, mae_dependent
 from copula import Clayton_Bivariate, Frank_Bivariate
 from data_loader import MetabricDataLoader, get_data_loader
 import pandas as pd
@@ -12,7 +11,7 @@ import config as cfg
 from sota.deephit import make_deephit_single, train_deephit_model
 from sota.deepsurv import DeepSurv, make_deepsurv_prediction, train_deepsurv_model
 from sota.mtlr import make_mtlr_prediction, mtlr, train_mtlr_model
-from utility.data import dotdict, format_data_deephit_single
+from utility.data import dotdict, fix_types, format_data_deephit_single
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.util import predict_median_survival_time
 from sklearn.model_selection import train_test_split
@@ -86,18 +85,7 @@ if __name__ == "__main__":
                                                         random_state=seed)
     
     # Adjust types
-    df_train = df_train.astype({col: float for col in df_train.columns if col not in ["time", "true_time", "event"]})
-    df_train["time"] = df_train["time"].astype(int)
-    df_train["true_time"] = df_train["true_time"].astype(int)
-    df_train["event"] = df_train["event"].astype(bool)
-    df_valid = df_valid.astype({col: float for col in df_valid.columns if col not in ["time", "true_time", "event"]})
-    df_valid["time"] = df_valid["time"].astype(int)
-    df_valid["true_time"] = df_valid["true_time"].astype(int)
-    df_valid["event"] = df_valid["event"].astype(bool)
-    df_test = df_test.astype({col: float for col in df_train.columns if col not in ["time", "true_time", "event"]})
-    df_test["time"] = df_test["time"].astype(int)
-    df_test["true_time"] = df_test["true_time"].astype(int)
-    df_test["event"] = df_test["event"].astype(bool)
+    df_train, df_valid, df_test = fix_types(df_train, df_valid, df_test)
   
     # Process data
     data_train = df_train.drop(columns=["true_time"])
@@ -134,7 +122,6 @@ if __name__ == "__main__":
     time_bins = torch.cat((torch.tensor([0]).to(device), time_bins))
     
     # Estimate theta on the new dataset and find the best copula
-    """
     results_list = []
     for copula_name in ['clayton', 'frank']:
         dep_model1 = Weibull_log_linear(n_features, dtype=dtype, device=device) # censoring model
@@ -167,7 +154,6 @@ if __name__ == "__main__":
         # No valid copula found
         best_copula_name = None
         best_copula_theta = None
-    """
     
     for model_name in MODELS:
         # Reset seeds
@@ -237,7 +223,7 @@ if __name__ == "__main__":
         else:
             raise NotImplementedError()
         
-        # Make dataframe, set survival at 0 to 1
+        # Make dataframe
         survival_outputs = pd.DataFrame(survival_outputs, columns=time_bins.cpu().numpy())
         survival_outputs[0] = 1
         
@@ -246,8 +232,6 @@ if __name__ == "__main__":
         ci_true = true_evaluator.concordance()[0]
         ibs_true = true_evaluator.integrated_brier_score(num_points=10, IPCW_weighted=False)
         mae_true = true_evaluator.mae(method="Uncensored")
-        
-        continue
         
         # Calculate censored metrics
         censored_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
@@ -275,7 +259,7 @@ if __name__ == "__main__":
                                 data_train.time.values, data_train.event.values, copula_name=best_copula_name,
                                 alpha=copula_theta)
 
-        # Save results
+        # Create results
         model_results = pd.DataFrame()
         result_row = pd.Series([seed, model_name, best_copula_name, dataset_name, strategy, best_copula_theta,
                                 ci_true, ibs_true, mae_true, ci, ibs, mae_uncensored, mae_hinge, mae_margin,

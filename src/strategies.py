@@ -133,6 +133,41 @@ def make_synthetic_censoring(strategy: str,
     
     return censor_times, selected_features
 
+def make_synthetic_censoring_top_k(df_event: pd.DataFrame,
+                                   df_all: pd.DataFrame,
+                                   top_k: int):
+    """
+    Build synthetic dependent censoring times
+    :param strategy: type of censoring strategy
+    :param df_event: dataframe with all event patients
+    :param df_all: dataframe with all patients
+    :return: synthetic censoring times
+    """
+    df_all_copy = df_all.copy()
+    df_all_copy.event = 1 - df_all_copy.event
+    X = df_all_copy[df_all_copy.columns].drop(['time', 'event'], axis=1)
+    y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
+    gbsa = GradientBoostingSurvivalAnalysis(random_state=0)
+    gbsa.fit(X, y)
+    importances = gbsa.feature_importances_
+    feature_importances = pd.DataFrame({'Feature': X.columns, 'Importance': importances})
+    top_k_fts = list(feature_importances.sort_values(by='Importance', ascending=False)[:top_k]['Feature'])
+    cph = CoxPHSurvivalAnalysis(alpha=0.0001)
+    X = df_all_copy.drop(['event', 'time'], axis=1)
+    y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
+    cph.fit(X, y)
+    censor_curves = cph.predict_survival_function(df_event.drop(['event', 'time'], axis=1))
+    censor_curves = pd.DataFrame(np.row_stack([fn(cph.unique_times_) for fn in censor_curves]), columns=cph.unique_times_)
+    uniq_times = cph.unique_times_
+    censor_cdf = 1 - censor_curves.values
+    censor_pdf = calculate_pdf(censor_cdf)
+    censor_times = np.empty(censor_pdf.shape[0])
+    for i in range(censor_pdf.shape[0]):
+        censor_times[i] = uniq_times[np.argmax(censor_pdf[i, :])] # use the max prob
+    selected_features = top_k_fts
+    
+    return censor_times, selected_features
+
 if __name__ == "__main__":
     # Load data
     dl = MetabricDataLoader().load_data()
