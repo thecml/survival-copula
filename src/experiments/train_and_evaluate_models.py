@@ -13,18 +13,18 @@ from sota.deephit import make_deephit_single, train_deephit_model
 from sota.deepsurv import DeepSurv, make_deepsurv_prediction, train_deepsurv_model
 from sota.mtlr import make_mtlr_prediction, mtlr, train_mtlr_model
 from utility.data import dotdict, format_data_deephit_single
-from lifelines import CoxPHFitter
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.util import predict_median_survival_time
 from sklearn.model_selection import train_test_split
 from scipy.interpolate import interp1d
 
-from models import Weibull_log_linear
+from models import Weibull_log_linear, Weibull_nonlinear
 from strategies import combine_data_with_censor, make_synthetic_censoring
 from utility.preprocessor import Preprocessor
 from utility.survival import convert_to_structured, make_stratified_split, make_time_bins, preprocess_data, theta_to_kendall_tau
 from trainer import train_copula_model, predict_survival_curve
 
+from sksurv.linear_model import CoxPHSurvivalAnalysis
 from sksurv.ensemble import GradientBoostingSurvivalAnalysis, RandomSurvivalForest
 
 np.random.seed(0)
@@ -36,13 +36,18 @@ torch.set_default_dtype(dtype)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-MODELS = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
+#dataset_names=("gbsg" "metabric" "mimic" "nacd" "support" "whas" "aids"
+# "seer_brain" "seer_breast" "seer_liver" "seer_prostate" "seer_stomach")
+
+# WHAS OK
+
+MODELS = ["coxph"] #"gbsa", "rsf", "deepsurv", "mtlr"
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--dataset_name', type=str, default='whas')
+    parser.add_argument('--dataset_name', type=str, default='gbsa')
     parser.add_argument('--strategy', type=str, default='original')
     
     args = parser.parse_args()
@@ -56,7 +61,7 @@ if __name__ == "__main__":
     num_features, cat_features = dl.get_features()
     
     # Preprocess full dataset
-    preprocessor = Preprocessor(cat_feat_strat='mode', num_feat_strat='mean', scaling_strategy="standard")
+    preprocessor = Preprocessor(cat_feat_strat='mode', num_feat_strat='mean', scaling_strategy="minmax")
     transformer = preprocessor.fit(df_full.drop(['time', 'event'], axis=1),
                                    cat_feats=cat_features, num_feats=num_features,
                                    one_hot=True, fill_value=-1)
@@ -129,6 +134,7 @@ if __name__ == "__main__":
     time_bins = torch.cat((torch.tensor([0]).to(device), time_bins))
     
     # Estimate theta on the new dataset and find the best copula
+    """
     results_list = []
     for copula_name in ['clayton', 'frank']:
         dep_model1 = Weibull_log_linear(n_features, dtype=dtype, device=device) # censoring model
@@ -137,9 +143,9 @@ if __name__ == "__main__":
             copula = Clayton_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
         elif copula_name == "frank":
             copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
-        dep_model1, dep_model2, copula, min_val_loss= train_copula_model(dep_model1, dep_model2, train_dict,
-                                                                         valid_dict, copula=copula, n_epochs=100000,
-                                                                         patience=1000, lr=1e-3, batch_size=n_samples, verbose=False)
+        dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
+                                                                          valid_dict, copula=copula, n_epochs=10000,
+                                                                          patience=100, lr=1e-3, batch_size=1024, verbose=True)
         copula_theta = float(copula.parameters()[0][0])
         k = sum(param.numel() for param in dep_model1.parameters())
         k += sum(param.numel() for param in dep_model2.parameters())
@@ -148,8 +154,20 @@ if __name__ == "__main__":
                              'min_val_loss': min_val_loss, 'num_params': k})
     results_df = pd.DataFrame(results_list)
     results_df['AIC'] = 2*results_df['num_params'] + 2*results_df['min_val_loss'] # AIC
-    best_copula_name = results_df.loc[results_df['AIC'].idxmin()]['copula_name']
-    best_copula_theta = results_df.loc[results_df['AIC'].idxmin()]['copula_theta']
+    
+    # Filter for copulas that capture dependence (theta > 0.01)
+    valid_copulas = results_df[results_df['copula_theta'] > 0.01]
+
+    # Select the copula with the lowest AIC among valid copulas
+    if not valid_copulas.empty:
+        best_idx = valid_copulas['AIC'].idxmin()
+        best_copula_name = valid_copulas.loc[best_idx, 'copula_name']
+        best_copula_theta = valid_copulas.loc[best_idx, 'copula_theta']
+    else:
+        # No valid copula found
+        best_copula_name = None
+        best_copula_theta = None
+    """
     
     for model_name in MODELS:
         # Reset seeds
@@ -157,11 +175,13 @@ if __name__ == "__main__":
         torch.manual_seed(0)
         torch.cuda.manual_seed_all(0)
         random.seed(0)
+        
+        print(model_name)
 
         # Train base learners
         if model_name == "coxph":
-            model = CoxPHFitter(penalizer=0.0001)
-            model.fit(data_train, duration_col='time', event_col='event')
+            model = CoxPHSurvivalAnalysis(alpha=0.0001)
+            model.fit(X_train, y_train)
         elif model_name == "gbsa":
             model = GradientBoostingSurvivalAnalysis(random_state=0)
             model.fit(X_train, y_train)
@@ -196,9 +216,7 @@ if __name__ == "__main__":
             raise NotImplementedError()
         
         # Compute survival function
-        if model_name == "coxph":
-            survival_outputs = model.predict_survival_function(data_test, time_bins.cpu().numpy()).T
-        elif model_name in ["gbsa", "rsf"]:
+        if model_name in ["coxph", "gbsa", "rsf"]:
             survival_outputs = model.predict_survival_function(X_test)
             survival_outputs = np.row_stack([fn(time_bins.cpu().numpy()) for fn in survival_outputs])
         elif model_name == "deepsurv":
@@ -218,12 +236,18 @@ if __name__ == "__main__":
             survival_outputs = survival_outputs[:, 1:].cpu().numpy()
         else:
             raise NotImplementedError()
-            
+        
+        # Make dataframe, set survival at 0 to 1
+        survival_outputs = pd.DataFrame(survival_outputs, columns=time_bins.cpu().numpy())
+        survival_outputs[0] = 1
+        
         # Create true evaluator to calculate true metrics
         true_evaluator = SurvivalEvaluator(survival_outputs, time_bins, true_test_time, true_test_event)
         ci_true = true_evaluator.concordance()[0]
         ibs_true = true_evaluator.integrated_brier_score(num_points=10, IPCW_weighted=False)
         mae_true = true_evaluator.mae(method="Uncensored")
+        
+        continue
         
         # Calculate censored metrics
         censored_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
@@ -245,8 +269,8 @@ if __name__ == "__main__":
                             data_train.time.values, data_train.event.values, copula_name=best_copula_name,
                             alpha=copula_theta)[0]
         ibs_dep = ibs_dependent(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                data_train.time.values, data_train.event.values, copula_name=best_copula_name,
-                                num_points=10, alpha=copula_theta)
+                                data_train.time.values, data_train.event.values, num_points=10, 
+                                copula_name=best_copula_name, alpha=copula_theta)
         mae_dep = mae_dependent(predicted_times, data_test.time.values, data_test.event.values,
                                 data_train.time.values, data_train.event.values, copula_name=best_copula_name,
                                 alpha=copula_theta)
@@ -260,9 +284,11 @@ if __name__ == "__main__":
                                        "CITrue", "IBSTrue", "MAETrue", "CI", "IBS", "MAEUncens",
                                        "MAEHinge", "MAEMargin", "MAEIPCWV1", "MAEIPCWV2", "MAEPseudo",
                                        "CIDep", "IBSDep", "MAEDep"])
+        print(result_row)
         model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
             
         # Save results
+        """
         filename = f"{cfg.RESULTS_DIR}/dependent.csv"
         if os.path.exists(filename):
             results = pd.read_csv(filename)
@@ -270,3 +296,4 @@ if __name__ == "__main__":
             results = pd.DataFrame(columns=model_results.columns)
         results = results.append(model_results, ignore_index=True)
         results.to_csv(filename, index=False)
+        """

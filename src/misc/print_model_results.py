@@ -24,7 +24,7 @@ if __name__ == "__main__":
     cols_to_scale = ["CITrue", "IBSTrue", "CI", "CIDep", "IBS", "IBSDep"]
     results[cols_to_scale] = results[cols_to_scale] * 100
     
-    datasets = ["gbsg"]
+    datasets = ["gbsg", "metabric", "whas", "seer_breast", "seer_liver", "seer_prostate", "seer_stomach"]
     strategies = ["original", "top_5", "top_10", "random_25"]
     model_names = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
     
@@ -103,11 +103,12 @@ if __name__ == "__main__":
             mean_mae_margin_error = f"%.{N_DECIMALS}f" % round(mean_mae_margin_error, N_DECIMALS)
             mean_mae_dep_error = f"%.{N_DECIMALS}f" % round(mean_mae_dep_error, N_DECIMALS)
             
-            text += f"& {map_strategy_name(strategy)} & {mean_harrell_ci_error}" + \
-                    f"& {mean_ci_dep_error}" + \
-                    f"& {mean_ibs_error}" + \
-                    f"& {mean_ibs_dep_error}" + \
-                    f"& {mean_mae_margin_error}" + \
-                    f"& {mean_mae_dep_error} \\\\"
+            text += f"& {map_strategy_name(strategy)}" + \
+                    f" & {mean_harrell_ci_error}" + \
+                    f" & {mean_ci_dep_error}" + \
+                    f" & {mean_ibs_error}" + \
+                    f" & {mean_ibs_dep_error}" + \
+                    f" & {mean_mae_margin_error}" + \
+                    f" & {mean_mae_dep_error} \\\\"
             print(text)
         print()

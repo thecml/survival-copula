@@ -1,4 +1,5 @@
 import torch
+from torch import nn
 
 def LOG(x):
     return torch.log(x+1e-20*(x<1e-20))
@@ -280,3 +281,51 @@ class Weibull_log_linear:
         tmp = LOG(-1*LOG(u))*torch.exp(self.sigma)
         tmp1 = torch.matmul(x, self.coeff) + self.mu
         return torch.exp(tmp+tmp1)
+    
+class Weibull_nonlinear(nn.Module):
+    def __init__(self, n_features, hidden_units=32, device="cpu", dtype=torch.float64):
+        super(Weibull_nonlinear, self).__init__()
+        self.device = device
+        self.dtype = dtype
+        
+        # Weibull parameters
+        self.mu = nn.Parameter(torch.rand(1, device=device, dtype=dtype))
+        self.sigma = nn.Parameter(torch.rand(1, device=device, dtype=dtype))
+        
+        # Nonlinear neural network for covariate transformation
+        self.net = nn.Sequential(
+            nn.Linear(n_features, hidden_units, device=device, dtype=dtype),
+            nn.ReLU(),
+            nn.Linear(hidden_units, 1, device=device, dtype=dtype)
+        )
+
+    def survival(self, t, x):
+        linear_pred = self.net(x).squeeze(-1)  # Nonlinear transformation of input
+        exponent = (torch.log(t) - self.mu - linear_pred) / torch.exp(self.sigma)
+        return torch.exp(-torch.exp(exponent))
+
+    def cum_hazard(self, t, x):
+        linear_pred = self.net(x).squeeze(-1)
+        return torch.exp((torch.log(t) - self.mu - linear_pred) / torch.exp(self.sigma))
+
+    def hazard(self, t, x):
+        return self.cum_hazard(t, x) / (t * torch.exp(self.sigma))
+
+    def PDF(self, t, x):
+        return self.survival(t, x) * self.hazard(t, x)
+
+    def CDF(self, t, x):
+        return 1 - self.survival(t, x)
+
+    def enable_grad(self):
+        for param in self.parameters():
+            param.requires_grad = True
+
+    def parameters(self):
+        return list(super(Weibull_nonlinear, self).parameters())
+
+    def rvs(self, x, u):
+        linear_pred = self.net(x).squeeze(-1)
+        tmp = torch.log(-torch.log(u)) * torch.exp(self.sigma)
+        tmp1 = linear_pred + self.mu
+        return torch.exp(tmp + tmp1)
