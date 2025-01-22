@@ -30,8 +30,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--k_tau', type=float, default=0.8)
-    parser.add_argument('--copula_name', type=str, default="clayton")
+    parser.add_argument('--k_tau', type=float, default=0.7)
+    parser.add_argument('--copula_name', type=str, default="frank")
     parser.add_argument('--linear', action='store_false')
     
     args = parser.parse_args()
@@ -91,8 +91,9 @@ if __name__ == "__main__":
     true_evaluator = SurvivalEvaluator(survival_outputs, time_bins, true_test_time, true_test_event)
     predicted_times = true_evaluator.predict_time_from_curve(predict_median_survival_time)
     risks = -1 * predicted_times
-    ci_true = concordance_index_uncensored(risks, true_test_time, true_test_event)
-    ibs_true = integrated_brier_score_uncensored(survival_outputs.values, true_test_time, num_points=10)
+    ci_true = true_evaluator.concordance()[0]
+    ibs_true = true_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
+    #ibs_true = integrated_brier_score_uncensored(survival_outputs.values, true_test_time, num_points=10)
     mae_true = mean_absolute_error_uncensored(predicted_times, true_test_time)
     print(f"True CI: {ci_true:.4f}, True IBS: {ibs_true:.4f}, True MAE: {mae_true:.4f}")
     
@@ -119,3 +120,7 @@ if __name__ == "__main__":
                             alpha=copula_theta)
     print(f"Dep CI: {ci_dep:.4f}, Dep IBS: {ibs_dep:.4f}, Dep MAE: {mae_dep:.4f}")
 
+# Table that shows difference (error) to true CI/IBS/MAE - also for Dep.
+# Plot for error of Weibull model with/without copula parameter given dataset for top_K features (SEER)
+# Ranking of models - Figure / Table
+# 

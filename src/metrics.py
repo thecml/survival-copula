@@ -285,21 +285,22 @@ def ibs_dependent(predicted_curves: np.ndarray,
         time_range = max_target_time
     
     # Calculate multiple Brier scores at multiple specific times.
-    predict_probs_mat = predict_multi_probabilities_from_curve(predicted_curves, time_bins,
-                                                               time_points, interpolation="Linear")   
-    target_times_mat = np.repeat(time_points.reshape(1, -1), repeats=len(event_times), axis=0)
-    event_times_mat = np.repeat(event_times.reshape(-1, 1), repeats=len(time_points), axis=1)
-    event_indicators_mat = np.repeat(event_indicators.reshape(-1, 1), repeats=len(time_points), axis=1)
-    event_indicators_mat = event_indicators_mat.astype(bool)
+    #predict_probs_mat = predict_multi_probabilities_from_curve(predicted_curves, time_bins,
+    #                                                           time_points, interpolation="Linear")   
 
     method = "bg" # bg using CG estimator
     if method == "ipcw":
+        target_times_mat = np.repeat(time_points.reshape(1, -1), repeats=len(event_times), axis=0)
+        event_times_mat = np.repeat(event_times.reshape(-1, 1), repeats=len(time_points), axis=1)
+        event_indicators_mat = np.repeat(event_indicators.reshape(-1, 1), repeats=len(time_points), axis=1)
+        event_indicators_mat = event_indicators_mat.astype(bool)    
+    
         inverse_train_event_indicators = 1 - train_event_indicators
 
         # Use the CG estimator for IPCW
-        ipc_model = CopulaGraphic(train_event_times, inverse_train_event_indicators,
-                                  copula_name=copula_name, alpha=alpha)
-        #ipc_model = KaplanMeierArea(train_event_times, inverse_train_event_indicators)
+        #ipc_model = CopulaGraphic(train_event_times, inverse_train_event_indicators,
+        #                          copula_name=copula_name, alpha=alpha)
+        ipc_model = KaplanMeierArea(train_event_times, inverse_train_event_indicators)
 
         # Category one calculates IPCW weight at observed time point.
         # Category one is individuals with event time lower than the time of interest and were NOT censored.
@@ -329,10 +330,28 @@ def ibs_dependent(predicted_curves: np.ndarray,
         censored_times_bg = cg_model.best_guess(censored_times)
         event_times_bg = event_times.copy()
         event_times_bg[event_indicators == 0] = censored_times_bg
-        brier_scores = np.array([
-            brier_score_uncensored(time_idx, predicted_curves, event_times_bg)
-        for time_idx in range(len(time_points))
-        ])
+        
+        event_indicators = np.ones_like(event_indicators)
+
+        target_times_mat = np.repeat(time_points.reshape(1, -1), repeats=len(event_times), axis=0)
+        event_times_mat = np.repeat(event_times_bg.reshape(-1, 1), repeats=len(time_points), axis=1)
+        event_indicators_mat = np.repeat(event_indicators.reshape(-1, 1), repeats=len(time_points), axis=1)
+        event_indicators_mat = event_indicators_mat.astype(bool)
+        
+        from SurvivalEVAL.Evaluations.util import predict_multi_probs_from_curve
+        predict_probs_mat = []
+        for i in range(predicted_curves.shape[0]):
+            predict_probs = predict_multi_probs_from_curve(predicted_curves[i, :],
+                                                           time_bins,
+                                                           time_points).tolist()
+            predict_probs_mat.append(predict_probs)
+        predict_probs_mat = np.array(predict_probs_mat)
+    
+        weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat)
+        weight_cat2 = (event_times_mat > target_times_mat)
+        
+        square_error_mat = np.square(predict_probs_mat) * weight_cat1 + np.square(1 - predict_probs_mat) * weight_cat2
+        brier_scores = np.mean(square_error_mat, axis=0)
     else:
         weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat)
         weight_cat2 = (event_times_mat > target_times_mat)
@@ -353,16 +372,15 @@ def integrated_brier_score_uncensored(survival_outputs, true_test_time, num_poin
     max_target_time = np.max(true_test_time)
     time_points = np.linspace(0, max_target_time, num_points)
     brier_scores = np.array([
-        brier_score_uncensored(time_idx, survival_outputs, true_test_time)
-        for time_idx in range(len(time_points))
-    ])
+        brier_score_uncensored(time_idx, time_point, survival_outputs, true_test_time)
+        for time_idx, time_point in enumerate(time_points)])
     integral_value = trapezoid(brier_scores, time_points)
     ibs_score = integral_value / max_target_time
     return ibs_score
     
-def brier_score_uncensored(time_point, survival_output, true_test_time):
+def brier_score_uncensored(time_idx, time_point, survival_output, true_test_time):
     event_indicator = (true_test_time >= time_point).astype(int)
-    survival_prob = survival_output[:, time_point]
+    survival_prob = survival_output[time_idx]
     brier_score = np.mean((survival_prob - event_indicator) ** 2)
     return brier_score
 
