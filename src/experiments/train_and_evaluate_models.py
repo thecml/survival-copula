@@ -11,7 +11,7 @@ import config as cfg
 from sota.deephit import make_deephit_single, train_deephit_model
 from sota.deepsurv import DeepSurv, make_deepsurv_prediction, train_deepsurv_model
 from sota.mtlr import make_mtlr_prediction, mtlr, train_mtlr_model
-from utility.data import dotdict, fix_types, format_data_deephit_single
+from utility.data import dotdict, fix_types
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.util import predict_median_survival_time
 from sklearn.model_selection import train_test_split
@@ -46,7 +46,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--dataset_name', type=str, default='gbsa')
+    parser.add_argument('--dataset_name', type=str, default='gbsg')
     parser.add_argument('--strategy', type=str, default='original')
     
     args = parser.parse_args()
@@ -131,8 +131,9 @@ if __name__ == "__main__":
         elif copula_name == "frank":
             copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
         dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
-                                                                          valid_dict, copula=copula, n_epochs=10000,
-                                                                          patience=100, lr=1e-3, batch_size=1024, verbose=True)
+                                                                          valid_dict, copula=copula, n_epochs=100,
+                                                                          patience=100, lr=1e-3, batch_size=1024,
+                                                                          copula_name=copula_name, verbose=True)
         copula_theta = float(copula.parameters()[0][0])
         k = sum(param.numel() for param in dep_model1.parameters())
         k += sum(param.numel() for param in dep_model2.parameters())

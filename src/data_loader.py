@@ -55,8 +55,8 @@ class BaseDataLoader(ABC):
         :return: df
         """
         df = pd.DataFrame(self.X)
-        df['time'] = self.y['time']
-        df['event'] = self.y['event']
+        df['time'] = self.y_t
+        df['event'] = self.y_e
         return df
 
     def get_features(self) -> List[str]:
@@ -145,6 +145,9 @@ class SingleEventSyntheticDataLoader(BaseDataLoader):
         
         observed_times = np.minimum(t1_times, t2_times)
         event_indicators = np.array((t2_times < t1_times), dtype=np.int32)
+        
+        self.true_censor_times = t1_times
+        self.true_event_times = t2_times
     
         columns = [f'X{i}' for i in range(n_features)]
         self.X = pd.DataFrame(X.cpu(), columns=columns)
@@ -160,6 +163,7 @@ class SingleEventSyntheticDataLoader(BaseDataLoader):
         df = pd.DataFrame(self.X)
         df['event'] = self.y_e
         df['time'] = self.y_t
+        df['true_time'] = self.true_event_times
     
         df_train, df_valid, df_test = make_stratified_split(df, stratify_colname='time', frac_train=train_size,
                                                             frac_valid=valid_size, frac_test=test_size,

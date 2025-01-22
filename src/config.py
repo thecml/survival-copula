@@ -6,11 +6,11 @@ PLOTS_DIR = Path.joinpath(ROOT_DIR, 'plots')
 DATA_DIR = Path.joinpath(ROOT_DIR, 'data')
 
 data_cfg = {
-    "alpha_e1": 17,
-    "alpha_e2": 18,
-    "gamma_e1": 5,
+    "alpha_e1": 19,
+    "alpha_e2": 17,
+    "gamma_e1": 6,
     "gamma_e2": 4,
-    "n_samples": 1000,
+    "n_samples": 5000,
     "n_features": 10,
 }
 

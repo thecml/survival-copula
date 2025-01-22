@@ -33,7 +33,7 @@ def predict_survival_curve(model, x_test, time_bins, truth=False):
 
 def train_copula_model(model1, model2, train_data, val_data,
                        n_epochs, patience=1000, batch_size=32, lr=1e-3,
-                       verbose=False, copula=None):
+                       copula_name=None, verbose=False, copula=None):
     # Enable gradients for models
     model1.enable_grad()
     model2.enable_grad()
@@ -75,11 +75,14 @@ def train_copula_model(model1, model2, train_data, val_data,
                         p.grad = (p.grad * copula_grad_multiplier).clip(
                             -1 * copula_grad_clip, 1 * copula_grad_clip
                         )
+                        
                 optimizer.step()
-                for p in copula.parameters():
-                    if p < 0.01:
-                        with torch.no_grad():
-                            copula.theta.data.fill_(0.01)
+                
+                if copula_name == "clayton":
+                    for p in copula.parameters():
+                        if p < 0.01:
+                            with torch.no_grad():
+                                copula.theta.data.fill_(0.01)
             else:
                 optimizer.step()
 

@@ -6,6 +6,12 @@ from sklearn.utils import shuffle
 from skmultilearn.model_selection import iterative_train_test_split
 from typing import Union, Tuple, Optional, List, Any
 from utility.preprocessor import Preprocessor
+from statsmodels.distributions.copula.api import ClaytonCopula, FrankCopula, GumbelCopula
+
+import numpy as np
+from scipy.integrate import quad
+from scipy.optimize import fsolve
+from scipy.optimize import root_scalar
 
 Numeric = Union[float, int, bool]
 NumericArrayLike = Union[List[Numeric], Tuple[Numeric], np.ndarray, pd.Series, pd.DataFrame, torch.Tensor]
@@ -167,23 +173,16 @@ def surv_diff(model, estimate, x, steps):
 
 def kendall_tau_to_theta(copula_name, k_tau):
     if copula_name == "clayton":
-        return 2 * k_tau / (1 - k_tau)
+        return ClaytonCopula().theta_from_tau(k_tau)
     elif copula_name == "frank":
-        return -np.log(1 - k_tau) / k_tau
+        return FrankCopula().theta_from_tau(k_tau)
     elif copula_name == "gumbel":
-        return 1 / (1 - k_tau)
+        return GumbelCopula().theta_from_tau(k_tau)
     else:
         raise ValueError('Copula not implemented')
     
 def theta_to_kendall_tau(copula_name, theta):
-    if copula_name == "clayton":
-        return theta / (theta + 2)
-    elif copula_name == "frank":
-        return 1 - 4 * ((1 - np.exp(-theta)) / theta)
-    elif copula_name == "gumbel":
-        return (theta - 1) / theta
-    else:
-        raise ValueError('Copula not implemented')
+    raise NotImplementedError()
     
 def multilabel_train_test_split(X, y, test_size, random_state=None):
     """Iteratively stratified train/test split
