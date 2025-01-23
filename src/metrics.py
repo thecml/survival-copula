@@ -242,6 +242,7 @@ def ci_dependent(predicted_times: np.ndarray,
         tied_tol = 1e-8
         w = np.square(ipcw)
 
+        from SurvivalEVAL.Evaluations.Concordance import _estimate_concordance_index
         cindex, concordant, discordant, tied_risk, tied_time = _estimate_concordance_index(event_indicators, event_times,
                                                                                            risks, w, tied_tol)
         
@@ -326,7 +327,8 @@ def ibs_dependent(predicted_curves: np.ndarray,
     elif method == "bg":
         censored_times = event_times[event_indicators == 0]
         cg_model = CopulaGraphic(train_event_times, train_event_indicators, copula_name=copula_name, alpha=alpha)
-        #km_model = KaplanMeierArea(train_event_times, train_event_indicators)
+        
+        
         censored_times_bg = cg_model.best_guess(censored_times)
         event_times_bg = event_times.copy()
         event_times_bg[event_indicators == 0] = censored_times_bg
@@ -367,51 +369,4 @@ def ibs_dependent(predicted_curves: np.ndarray,
     ibs_score = integral_value / time_range
     
     return ibs_score
-
-def integrated_brier_score_uncensored(survival_outputs, true_test_time, num_points):
-    max_target_time = np.max(true_test_time)
-    time_points = np.linspace(0, max_target_time, num_points)
-    brier_scores = np.array([
-        brier_score_uncensored(time_idx, time_point, survival_outputs, true_test_time)
-        for time_idx, time_point in enumerate(time_points)])
-    integral_value = trapezoid(brier_scores, time_points)
-    ibs_score = integral_value / max_target_time
-    return ibs_score
-    
-def brier_score_uncensored(time_idx, time_point, survival_output, true_test_time):
-    event_indicator = (true_test_time >= time_point).astype(int)
-    survival_prob = survival_output[time_idx]
-    brier_score = np.mean((survival_prob - event_indicator) ** 2)
-    return brier_score
-
-def concordance_index_uncensored(risks, true_test_time, true_test_event):
-    n_concordant = 0
-    n_discordant = 0
-    n_comparable = 0
-
-    for i in range(len(risks)):
-        for j in range(i + 1, len(risks)):
-            # Compare pairs only if both events are observed
-            if true_test_event[i] == 1 and true_test_event[j] == 1:
-                if true_test_time[i] != true_test_time[j]:
-                    n_comparable += 1
-                    if (true_test_time[i] < true_test_time[j] and risks[i] > risks[j]) or \
-                       (true_test_time[i] > true_test_time[j] and risks[i] < risks[j]):
-                        n_concordant += 1
-                    elif (true_test_time[i] < true_test_time[j] and risks[i] < risks[j]) or \
-                         (true_test_time[i] > true_test_time[j] and risks[i] > risks[j]):
-                        n_discordant += 1
-
-    # Concordance Index
-    ci = n_concordant / n_comparable if n_comparable > 0 else 0
-    return ci
-
-def mean_absolute_error_uncensored(predicted_times, true_test_time):
-    mae = np.mean(np.abs(predicted_times - true_test_time))
-    return mae
-
-
-    
-    
-    
     
