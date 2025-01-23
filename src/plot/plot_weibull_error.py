@@ -3,8 +3,8 @@ import config as cfg
 
 matplotlib_style = 'default'
 import matplotlib.pyplot as plt; plt.style.use(matplotlib_style)
-plt.rcParams.update({'axes.labelsize': 'medium',
-                     'axes.titlesize': 'medium',
+plt.rcParams.update({'axes.labelsize': 'large',
+                     'axes.titlesize': 'large',
                      'font.size': 14.0})
 
 # Load the results from CSV

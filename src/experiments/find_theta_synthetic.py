@@ -6,11 +6,9 @@ from data_loader import SingleEventSyntheticDataLoader
 import pandas as pd
 import numpy as np
 import config as cfg
-from SurvivalEVAL import SurvivalEvaluator
-
 from models import Weibull_log_linear
-from utility.survival import kendall_tau_to_theta, make_time_bins, theta_to_kendall_tau
-from trainer import train_copula_model, predict_survival_curve
+from utility.survival import theta_to_kendall_tau
+from trainer import train_copula_model
 
 np.random.seed(0)
 torch.manual_seed(0)

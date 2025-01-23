@@ -122,7 +122,7 @@ def make_synthetic_censoring(strategy: str,
         censor_curves = cph.predict_survival_function(df_event.drop(['event', 'time'], axis=1))
         censor_curves = pd.DataFrame(np.row_stack([fn(cph.unique_times_) for fn in censor_curves]), columns=cph.unique_times_)
         uniq_times = cph.unique_times_
-        censor_cdf = 1 - censor_curves.values.T
+        censor_cdf = 1 - censor_curves.values
         censor_pdf = calculate_pdf(censor_cdf)
         censor_times = np.empty(censor_pdf.shape[0])
         for i in range(censor_pdf.shape[0]):

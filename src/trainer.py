@@ -22,15 +22,6 @@ def loss_function(model1, model2, data, copula=None):
     p2[torch.isnan(p2)] = 0
     return -torch.mean(p1 * data['E'] + (1-data['E'])*p2)
 
-def predict_survival_curve(model, x_test, time_bins, truth=False):
-    device = torch.device("cpu")
-    surv_estimate = torch.zeros((x_test.shape[0], time_bins.shape[0]), device=device)
-    x_test = torch.tensor(x_test)
-    time_bins = torch.tensor(time_bins)
-    for i in range(time_bins.shape[0]):
-        surv_estimate[:,i] = model.survival(time_bins[i], x_test)
-    return surv_estimate, time_bins, time_bins.max()
-
 def train_copula_model(model1, model2, train_data, val_data,
                        n_epochs, patience=1000, batch_size=32, lr=1e-3,
                        copula_name=None, verbose=False, copula=None):

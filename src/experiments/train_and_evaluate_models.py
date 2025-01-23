@@ -4,24 +4,22 @@ import random
 import torch
 from metrics import ci_dependent, ibs_dependent, mae_dependent
 from copula import Clayton_Bivariate, Frank_Bivariate
-from data_loader import MetabricDataLoader, get_data_loader
+from data_loader import get_data_loader
 import pandas as pd
 import numpy as np
 import config as cfg
-from sota.deephit import make_deephit_single, train_deephit_model
 from sota.deepsurv import DeepSurv, make_deepsurv_prediction, train_deepsurv_model
 from sota.mtlr import make_mtlr_prediction, mtlr, train_mtlr_model
 from utility.data import dotdict, fix_types
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.util import predict_median_survival_time
-from sklearn.model_selection import train_test_split
 from scipy.interpolate import interp1d
 
-from models import Weibull_log_linear, Weibull_nonlinear
+from models import Weibull_log_linear
 from strategies import combine_data_with_censor, make_synthetic_censoring
 from utility.preprocessor import Preprocessor
-from utility.survival import convert_to_structured, make_stratified_split, make_time_bins, preprocess_data, theta_to_kendall_tau
-from trainer import train_copula_model, predict_survival_curve
+from utility.survival import convert_to_structured, make_stratified_split, make_time_bins
+from trainer import train_copula_model
 
 from sksurv.linear_model import CoxPHSurvivalAnalysis
 from sksurv.ensemble import GradientBoostingSurvivalAnalysis, RandomSurvivalForest
@@ -45,7 +43,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--dataset_name', type=str, default='gbsg')
+    parser.add_argument('--dataset_name', type=str, default='nacd')
     parser.add_argument('--strategy', type=str, default='original')
     
     args = parser.parse_args()
@@ -227,7 +225,6 @@ if __name__ == "__main__":
         
         # Create true evaluator to calculate true metrics
         true_evaluator = SurvivalEvaluator(survival_outputs, time_bins, true_test_time, true_test_event)
-        predicted_times = true_evaluator.predict_time_from_curve(predict_median_survival_time)
         ci_true = true_evaluator.concordance()[0]
         ibs_true = true_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
         mae_true = true_evaluator.mae(method="Uncensored")

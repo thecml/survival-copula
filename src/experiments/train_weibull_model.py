@@ -1,4 +1,3 @@
-import os
 import random
 from SurvivalEVAL import SurvivalEvaluator
 import torch
@@ -10,14 +9,12 @@ import numpy as np
 import config as cfg
 from utility.data import fix_types
 from SurvivalEVAL.Evaluations.util import predict_median_survival_time
-from sklearn.model_selection import train_test_split
-from scipy.interpolate import interp1d
 
 from models import Weibull_log_linear
 from strategies import combine_data_with_censor, make_synthetic_censoring_top_k
 from utility.preprocessor import Preprocessor
-from utility.survival import convert_to_structured, make_stratified_split, make_time_bins, preprocess_data
-from trainer import train_copula_model, predict_survival_curve
+from utility.survival import convert_to_structured, make_stratified_split, make_time_bins
+from trainer import train_copula_model
 
 np.random.seed(0)
 torch.manual_seed(0)
@@ -108,7 +105,7 @@ if __name__ == "__main__":
         indep_model1, indep_model2, _, _ = train_copula_model(indep_model1, indep_model2, train_dict,
                                                               valid_dict, n_epochs=10000,
                                                               patience=100, lr=1e-3, batch_size=1024,
-                                                              verbose=True)
+                                                              verbose=False)
         
         # Train dep model
         dep_model1 = Weibull_log_linear(n_features, dtype=dtype, device=device) # censoring model
@@ -120,7 +117,7 @@ if __name__ == "__main__":
         dep_model1, dep_model2, copula, _ = train_copula_model(dep_model1, dep_model2, train_dict,
                                                                valid_dict, copula=copula, n_epochs=10000,
                                                                patience=100, lr=1e-3, batch_size=1024,
-                                                               verbose=True)
+                                                               verbose=False)
         copula_theta = float(copula.parameters()[0][0])
         
         # Compute survival function
@@ -129,43 +126,33 @@ if __name__ == "__main__":
         for i in range(len(time_bins)):
             survival_indep[:,i] = indep_model1.survival(time_bins[i], test_dict['X'])
             survival_dep[:,i] = dep_model1.survival(time_bins[i], test_dict['X'])
-            
-        # Calculate error for each model
-        survival_models = {
-            "indep_model": survival_indep,
-            "dep_model": survival_dep
-        }
 
         # Loop through each survival model
-        for model_name, survival_output in survival_models.items():
+        survival_models = {"indep_model": survival_indep, "dep_model": survival_dep}
+        for model_name, survival_outputs in survival_models.items():
             # Prepare the survival output as a DataFrame
-            survival_output = pd.DataFrame(survival_output.cpu(), columns=time_bins.cpu().numpy())
-            survival_output[0] = 1  # Ensure survival probability at time 0 is 1
+            survival_outputs = pd.DataFrame(survival_outputs.cpu(), columns=time_bins.cpu().numpy())
+            survival_outputs[0] = 1  # Ensure survival probability at time 0 is 1
 
             # Calculate true metrics
-            true_evaluator = SurvivalEvaluator(survival_output, time_bins, true_test_time, true_test_event)
+            true_evaluator = SurvivalEvaluator(survival_outputs, time_bins, true_test_time, true_test_event)
             ci_true = true_evaluator.concordance()[0]
-            ibs_true = true_evaluator.integrated_brier_score(num_points=10, IPCW_weighted=False)
+            ibs_true = true_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
             mae_true = true_evaluator.mae(method="Uncensored")
 
             # Calculate dependent metrics
-            dep_evaluator = SurvivalEvaluator(
-                survival_output, time_bins, 
-                data_test.time.values, data_test.event.values,
-                data_train.time.values, data_train.event.values)
+            dep_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
+                                            data_train.time.values, data_train.event.values)
             predicted_times = dep_evaluator.predict_time_from_curve(predict_median_survival_time)
-            ci_dep = ci_dependent(
-                predicted_times, data_test.time.values, data_test.event.values,
-                data_train.time.values, data_train.event.values,
-                copula_name=COPULA_NAME, alpha=copula_theta)[0]
-            ibs_dep = ibs_dependent(
-                survival_output, time_bins, data_test.time.values, data_test.event.values,
-                data_train.time.values, data_train.event.values, num_points=10,
-                copula_name=COPULA_NAME, alpha=copula_theta)
-            mae_dep = mae_dependent(
-                predicted_times, data_test.time.values, data_test.event.values,
-                data_train.time.values, data_train.event.values,
-                copula_name=COPULA_NAME, alpha=copula_theta)
+            ci_dep = ci_dependent(predicted_times, time_bins, data_test.time.values, data_test.event.values,
+                                data_train.time.values, data_train.event.values, copula_name=COPULA_NAME,
+                                alpha=copula_theta)
+            ibs_dep = ibs_dependent(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
+                                    data_train.time.values, data_train.event.values, num_points=10, 
+                                    copula_name=COPULA_NAME, alpha=copula_theta)
+            mae_dep = mae_dependent(predicted_times, data_test.time.values, data_test.event.values,
+                                    data_train.time.values, data_train.event.values, copula_name=COPULA_NAME,
+                                    alpha=copula_theta)
 
             # Calculate errors
             ci_error = ci_true - ci_dep
@@ -191,6 +178,6 @@ if __name__ == "__main__":
     results_df = pd.DataFrame(flattened_results)
 
     # Save results to a CSV file
-    filename = f"{cfg.RESULTS_DIR}/weibull_model_error.csv"
+    filename = f"{cfg.RESULTS_DIR}/weibull_model_error_{COPULA_NAME.lower()}.csv"
     results_df.to_csv(filename, index=False)
         
