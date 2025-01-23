@@ -32,8 +32,7 @@ class BaseDataLoader(ABC):
         """Initilizer method that takes a file path, file name,
         settings and optionally a converter"""
         self.X: pd.DataFrame = None
-        self.y_t: List[np.ndarray] = None
-        self.y_e: List[np.ndarray] = None
+        self.y: np.ndarray = None
         self.num_features: List[str] = None
         self.cat_features: List[str] = None
         self.min_time = None
@@ -55,8 +54,8 @@ class BaseDataLoader(ABC):
         :return: df
         """
         df = pd.DataFrame(self.X)
-        df['time'] = self.y_t
-        df['event'] = self.y_e
+        df['time'] = self.y['time']
+        df['event'] = self.y['event']
         return df
 
     def get_features(self) -> List[str]:

@@ -37,7 +37,6 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 #dataset_names=("gbsg" "metabric" "mimic" "nacd" "support" "whas" "aids"
 # "seer_brain" "seer_breast" "seer_liver" "seer_prostate" "seer_stomach")
-
 # WHAS OK
 
 MODELS = ["coxph"] #"gbsa", "rsf", "deepsurv", "mtlr"
@@ -131,9 +130,9 @@ if __name__ == "__main__":
         elif copula_name == "frank":
             copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
         dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
-                                                                          valid_dict, copula=copula, n_epochs=100,
+                                                                          valid_dict, copula=copula, n_epochs=10000,
                                                                           patience=100, lr=1e-3, batch_size=1024,
-                                                                          copula_name=copula_name, verbose=True)
+                                                                          copula_name=copula_name, verbose=False)
         copula_theta = float(copula.parameters()[0][0])
         k = sum(param.numel() for param in dep_model1.parameters())
         k += sum(param.numel() for param in dep_model2.parameters())
@@ -163,8 +162,6 @@ if __name__ == "__main__":
         torch.cuda.manual_seed_all(0)
         random.seed(0)
         
-        print(model_name)
-
         # Train base learners
         if model_name == "coxph":
             model = CoxPHSurvivalAnalysis(alpha=0.0001)
@@ -230,8 +227,9 @@ if __name__ == "__main__":
         
         # Create true evaluator to calculate true metrics
         true_evaluator = SurvivalEvaluator(survival_outputs, time_bins, true_test_time, true_test_event)
+        predicted_times = true_evaluator.predict_time_from_curve(predict_median_survival_time)
         ci_true = true_evaluator.concordance()[0]
-        ibs_true = true_evaluator.integrated_brier_score(num_points=10, IPCW_weighted=False)
+        ibs_true = true_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
         mae_true = true_evaluator.mae(method="Uncensored")
         
         # Calculate censored metrics
@@ -248,17 +246,17 @@ if __name__ == "__main__":
 
         # Calculate dependent metrics
         dep_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                          data_train.time.values, data_train.event.values)
+                                        data_train.time.values, data_train.event.values)
         predicted_times = dep_evaluator.predict_time_from_curve(predict_median_survival_time)
-        ci_dep = ci_dependent(predicted_times, data_test.time.values, data_test.event.values,
+        ci_dep = ci_dependent(predicted_times, time_bins, data_test.time.values, data_test.event.values,
                             data_train.time.values, data_train.event.values, copula_name=best_copula_name,
-                            alpha=copula_theta)[0]
+                            alpha=best_copula_theta)
         ibs_dep = ibs_dependent(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                 data_train.time.values, data_train.event.values, num_points=10, 
-                                copula_name=best_copula_name, alpha=copula_theta)
+                                copula_name=best_copula_name, alpha=best_copula_theta)
         mae_dep = mae_dependent(predicted_times, data_test.time.values, data_test.event.values,
                                 data_train.time.values, data_train.event.values, copula_name=best_copula_name,
-                                alpha=copula_theta)
+                                alpha=best_copula_theta)
 
         # Create results
         model_results = pd.DataFrame()
@@ -273,7 +271,6 @@ if __name__ == "__main__":
         model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
             
         # Save results
-        """
         filename = f"{cfg.RESULTS_DIR}/dependent.csv"
         if os.path.exists(filename):
             results = pd.read_csv(filename)
@@ -281,4 +278,3 @@ if __name__ == "__main__":
             results = pd.DataFrame(columns=model_results.columns)
         results = results.append(model_results, ignore_index=True)
         results.to_csv(filename, index=False)
-        """
