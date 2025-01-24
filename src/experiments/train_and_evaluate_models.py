@@ -33,10 +33,7 @@ torch.set_default_dtype(dtype)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-#dataset_names=("gbsg" "metabric" "mimic" "nacd" "support" "whas" "aids"
-# "seer_brain" "seer_breast" "seer_liver" "seer_prostate" "seer_stomach")
-
-MODELS = ["coxph"] #"gbsa", "rsf", "deepsurv", "mtlr"
+MODELS = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -128,7 +125,7 @@ if __name__ == "__main__":
             copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
         dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
                                                                           valid_dict, copula=copula, n_epochs=10000,
-                                                                          patience=100, lr=1e-3, batch_size=1024,
+                                                                          patience=100, lr=1e-3, batch_size=n_samples,
                                                                           copula_name=copula_name, verbose=False)
         copula_theta = float(copula.parameters()[0][0])
         k = sum(param.numel() for param in dep_model1.parameters())
@@ -235,16 +232,16 @@ if __name__ == "__main__":
         ibs = censored_evaluator.integrated_brier_score(num_points=10)
         mae_uncensored = censored_evaluator.mae(method="Uncensored")
         mae_hinge = censored_evaluator.mae(method="Hinge")
-        mae_margin = censored_evaluator.mae(method="Margin")
-        mae_ipcwv1 = censored_evaluator.mae(method="IPCW-v1")
-        mae_ipcwv2 = censored_evaluator.mae(method="IPCW-v2")
-        mae_pseudo = censored_evaluator.mae(method="Pseudo_obs")
+        mae_margin = censored_evaluator.mae(method="Margin", weighted=True)
+        mae_ipcwv1 = censored_evaluator.mae(method="IPCW-v1", weighted=True)
+        mae_ipcwv2 = censored_evaluator.mae(method="IPCW-v2", weighted=True)
+        mae_pseudo = censored_evaluator.mae(method="Pseudo_obs", weighted=True)
 
         # Calculate dependent metrics
         dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                            data_train.time.values, data_train.event.values, copula_name=copula_name,
                                            alpha=copula_theta)
-        ci_dep_bg = dep_evaluator.concordance(method="BG")[0]
+        ci_dep_ipcw = dep_evaluator.concordance(method="IPCW")[0]
         ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
         ibs_dep_ipcw = dep_evaluator.integrated_brier_score(method="IPCW", num_points=10)
         mae_dep_bg = dep_evaluator.mae(method="BG")
@@ -254,15 +251,15 @@ if __name__ == "__main__":
         model_results = pd.DataFrame()
         result_row = pd.Series([seed, model_name, best_copula_name, dataset_name, strategy, best_copula_theta,
                                 ci_true, ibs_true, mae_true, ci, ibs, mae_uncensored, mae_hinge, mae_margin,
-                                mae_ipcwv1, mae_ipcwv2, mae_pseudo, ci_dep_bg, ibs_dep_bg, ibs_dep_ipcw,
+                                mae_ipcwv1, mae_ipcwv2, mae_pseudo, ci_dep_ipcw, ibs_dep_bg, ibs_dep_ipcw,
                                 mae_dep_bg, mae_dep_ipcw],
                                 index=["Seed", "ModelName", "Copula", "Dataset", "Strategy", "Theta",
-                                       "CITrue", "IBSTrue", "MAETrue", "CI", "IBS", "MAEUncens",
+                                       "CITrue", "IBSTrue", "MAETrue", "HarrellCI", "IBSIPCW", "MAEUncens",
                                        "MAEHinge", "MAEMargin", "MAEIPCWV1", "MAEIPCWV2", "MAEPseudo",
-                                       "CIDepBG", "IBSDepBG", "IBSDepIPCW", "MAEDepBG", "MAEDepIPCW"])
+                                       "CIDepIPCW", "IBSDepBG", "IBSDepIPCW", "MAEDepBG", "MAEDepIPCW"])
         print(result_row)
         model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
-            
+        
         # Save results
         filename = f"{cfg.RESULTS_DIR}/dependent.csv"
         if os.path.exists(filename):

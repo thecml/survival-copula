@@ -195,9 +195,7 @@ class DependentEvaluator:
         return predicted_times
     
     def concordance(self, method: str):
-        # Dependent CI using BG/IPW
-        predicted_times = self.predict_time_from_curve(self.predict_time_method)
-        
+        # Dependent CI using BG/IPCW
         event_times = self.event_times
         event_indicators = self.event_indicators
         train_event_times = self.train_event_times
@@ -230,15 +228,57 @@ class DependentEvaluator:
             cindex, concordant_pairs, discordant_pairs, risk_ties, time_ties = estimate_concordance_index(
                 event_indicators, event_times, estimate=risks, bg_event_time=bg_event_times, partial_weights=partial_weights)
         elif method == "IPCW":
-            raise NotImplementedError()
+            cg_model_event = CopulaGraphic(train_event_times, train_event_indicators,
+                                           copula_name=copula_name, alpha=alpha)
+            cg_linear_zero = cg_model_event.cg_linear_zero
+            if np.isinf(cg_linear_zero):
+                cg_linear_zero = max(cg_model_event.survival_times)
+            predicted_times = np.clip(self.predicted_event_times, a_max=cg_linear_zero, a_min=None)
+            risks = -1 * predicted_times
+            
+            tau = None
+            tied_tol = 1e-8
+            
+            if tau is not None:
+                mask = event_times < tau
+                survival_test = survival_test[mask]
+            
+            inverse_train_event_indicators = 1 - train_event_indicators
+            cg_model_censor = CopulaGraphic(train_event_times, inverse_train_event_indicators,
+                                            copula_name=copula_name, alpha=alpha)
+            ipcw_test = cg_model_censor.predict(event_times)
+            
+            if tau is None:
+                ipcw = ipcw_test
+            else:
+                raise NotImplementedError()
+                #ipcw = np.empty(risks.shape[0], dtype=ipcw_test.dtype)
+                #ipcw[mask] = ipcw_test
+                #ipcw[~mask] = 0
+
+            w = np.square(ipcw)
+            
+            from sksurv.metrics import _estimate_concordance_index
+            cindex, concordant_pairs, discordant_pairs, risk_ties, time_ties = _estimate_concordance_index(event_indicators,
+                                                                                                           event_times,
+                                                                                                           risks,
+                                                                                                           weights=w,
+                                                                                                           tied_tol=tied_tol)
+            
+            #cindex, concordant_pairs, discordant_pairs, risk_ties, time_ties = estimate_concordance_index(event_indicators,
+            #                                                                                              event_times,
+            #                                                                                              risks,
+            #                                                                                              bg_event_time=None,
+            #                                                                                              partial_weights=w,
+            #                                                                                              tied_tol=tied_tol)
         else:
             raise NotImplementedError()
         
-        total_pairs = concordant_pairs + discordant_pairs + risk_ties # Ties = risk
-        concordant_pairs = concordant_pairs + 0.5 * risk_ties
-        cindex = concordant_pairs / total_pairs
+        #total_pairs = concordant_pairs + discordant_pairs # + risk_ties # Ties = risk
+        #concordant_pairs = concordant_pairs #+ 0.5 * risk_ties
+        #cindex = concordant_pairs / total_pairs
         
-        return cindex, concordant_pairs, total_pairs    
+        return cindex, concordant_pairs, (concordant_pairs+discordant_pairs)    
 
     def integrated_brier_score(self, method: str, num_points: int):
         # Dependent IBS using BG/IPCW
@@ -337,7 +377,7 @@ class DependentEvaluator:
         
         return ibs_score
     
-    def mae(self, method: str, weighted: bool = True):
+    def mae(self, method: str, weighted: bool=True):
         # Dependent MAE using BG/IPCW
         predicted_times = self.predict_time_from_curve(self.predict_time_method)
         predicted_curves = check_and_convert(self.predicted_curves)

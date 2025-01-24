@@ -38,8 +38,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--k_tau', type=float, default=0.25)
-    parser.add_argument('--copula_name', type=str, default="frank")
+    parser.add_argument('--k_tau', type=float, default=0.5)
+    parser.add_argument('--copula_name', type=str, default="clayton")
     parser.add_argument('--linear', action='store_false')
     
     args = parser.parse_args()
@@ -110,18 +110,18 @@ if __name__ == "__main__":
     risks = -1 * predicted_times
     ci_uno = concordance_index_ipcw(y_train, y_test, risks)[0]
     ibs_cens = censored_evaluator.integrated_brier_score(num_points=10)
-    mae_cens = censored_evaluator.mae(method="IPCW-v1")
+    mae_cens = censored_evaluator.mae(method="IPCW-v1", weighted=True)
     print(f"Harrell CI: {ci_harrell:.4f}, Uno CI: {ci_uno:.4f}, IPCW IBS: {ibs_cens:.5f}, IPCWv1 MAE: {mae_cens:.4f}")
 
     # Calculate dependent metrics
     dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                        data_train.time.values, data_train.event.values, copula_name=copula_name,
                                        alpha=copula_theta)
-    ci_dep_bg = dep_evaluator.concordance(method="BG")[0]
+    ci_dep_ipcw = dep_evaluator.concordance(method="IPCW")[0]
     ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
     ibs_dep_ipcw = dep_evaluator.integrated_brier_score(method="IPCW", num_points=10)
     mae_dep_bg = dep_evaluator.mae(method="BG")
     mae_dep_ipcw = dep_evaluator.mae(method="IPCW")
     
-    print(f"Dep CI BG: {ci_dep_bg:.4f}, Dep IBS BG: {ibs_dep_bg:.4f}, Dep IBS IPCW: {ibs_dep_ipcw:.4f}, " +
+    print(f"Dep CI IPCW: {ci_dep_ipcw:.4f}, Dep IBS BG: {ibs_dep_bg:.4f}, Dep IBS IPCW: {ibs_dep_ipcw:.4f}, " +
           f"Dep MAE BG: {mae_dep_bg:.4f}, Dep MAE IPCW: {mae_dep_ipcw:.4f}")
