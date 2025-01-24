@@ -54,10 +54,8 @@ class BaseDataLoader(ABC):
         :return: df
         """
         df = pd.DataFrame(self.X)
-        #df['time'] = self.y['time']
-        #df['event'] = self.y['event'] #TODO
-        df['event'] = self.y_e
-        df['time'] = self.y_t
+        df['time'] = self.y['time']
+        df['event'] = self.y['event']
         return df
 
     def get_features(self) -> List[str]:

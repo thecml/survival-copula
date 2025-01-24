@@ -2,12 +2,12 @@ import argparse
 import os
 import random
 import torch
-from metrics import ci_dependent, ibs_dependent, mae_dependent
 from copula import Clayton_Bivariate, Frank_Bivariate
 from data_loader import get_data_loader
 import pandas as pd
 import numpy as np
 import config as cfg
+from metrics import DependentEvaluator
 from sota.deepsurv import DeepSurv, make_deepsurv_prediction, train_deepsurv_model
 from sota.mtlr import make_mtlr_prediction, mtlr, train_mtlr_model
 from utility.data import dotdict, fix_types
@@ -35,7 +35,6 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 #dataset_names=("gbsg" "metabric" "mimic" "nacd" "support" "whas" "aids"
 # "seer_brain" "seer_breast" "seer_liver" "seer_prostate" "seer_stomach")
-# WHAS OK
 
 MODELS = ["coxph"] #"gbsa", "rsf", "deepsurv", "mtlr"
 
@@ -43,7 +42,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--dataset_name', type=str, default='nacd')
+    parser.add_argument('--dataset_name', type=str, default='gbsg')
     parser.add_argument('--strategy', type=str, default='original')
     
     args = parser.parse_args()
@@ -242,28 +241,25 @@ if __name__ == "__main__":
         mae_pseudo = censored_evaluator.mae(method="Pseudo_obs")
 
         # Calculate dependent metrics
-        dep_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                        data_train.time.values, data_train.event.values)
-        predicted_times = dep_evaluator.predict_time_from_curve(predict_median_survival_time)
-        ci_dep = ci_dependent(predicted_times, time_bins, data_test.time.values, data_test.event.values,
-                            data_train.time.values, data_train.event.values, copula_name=best_copula_name,
-                            alpha=best_copula_theta)
-        ibs_dep = ibs_dependent(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                data_train.time.values, data_train.event.values, num_points=10, 
-                                copula_name=best_copula_name, alpha=best_copula_theta)
-        mae_dep = mae_dependent(predicted_times, data_test.time.values, data_test.event.values,
-                                data_train.time.values, data_train.event.values, copula_name=best_copula_name,
-                                alpha=best_copula_theta)
+        dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
+                                           data_train.time.values, data_train.event.values, copula_name=copula_name,
+                                           alpha=copula_theta)
+        ci_dep_bg = dep_evaluator.concordance(method="BG")[0]
+        ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
+        ibs_dep_ipcw = dep_evaluator.integrated_brier_score(method="IPCW", num_points=10)
+        mae_dep_bg = dep_evaluator.mae(method="BG")
+        mae_dep_ipcw = dep_evaluator.mae(method="IPCW")
 
         # Create results
         model_results = pd.DataFrame()
         result_row = pd.Series([seed, model_name, best_copula_name, dataset_name, strategy, best_copula_theta,
                                 ci_true, ibs_true, mae_true, ci, ibs, mae_uncensored, mae_hinge, mae_margin,
-                                mae_ipcwv1, mae_ipcwv2, mae_pseudo, ci_dep, ibs_dep, mae_dep],
+                                mae_ipcwv1, mae_ipcwv2, mae_pseudo, ci_dep_bg, ibs_dep_bg, ibs_dep_ipcw,
+                                mae_dep_bg, mae_dep_ipcw],
                                 index=["Seed", "ModelName", "Copula", "Dataset", "Strategy", "Theta",
                                        "CITrue", "IBSTrue", "MAETrue", "CI", "IBS", "MAEUncens",
                                        "MAEHinge", "MAEMargin", "MAEIPCWV1", "MAEIPCWV2", "MAEPseudo",
-                                       "CIDep", "IBSDep", "MAEDep"])
+                                       "CIDepBG", "IBSDepBG", "IBSDepIPCW", "MAEDepBG", "MAEDepIPCW"])
         print(result_row)
         model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
             

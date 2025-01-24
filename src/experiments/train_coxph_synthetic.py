@@ -27,7 +27,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--k_tau', type=float, default=0.7)
+    parser.add_argument('--k_tau', type=float, default=0.5)
     parser.add_argument('--copula_name', type=str, default="clayton")
     parser.add_argument('--linear', action='store_false')
     
@@ -86,7 +86,6 @@ if __name__ == "__main__":
     
     # Create true evaluator to calculate true metrics
     true_evaluator = SurvivalEvaluator(survival_outputs, time_bins, true_test_time, true_test_event)
-    predicted_times = true_evaluator.predict_time_from_curve(predict_median_survival_time)
     ci_true = true_evaluator.concordance()[0]
     ibs_true = true_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
     mae_true = true_evaluator.mae(method="Uncensored")
@@ -104,12 +103,11 @@ if __name__ == "__main__":
     dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                        data_train.time.values, data_train.event.values, copula_name=copula_name,
                                        alpha=copula_theta)
-    predicted_times = dep_evaluator.predict_time_from_curve(predict_median_survival_time)
-    ci_dep = dep_evaluator.concordance(method="BG")[0]
+    ci_dep_bg = dep_evaluator.concordance(method="BG")[0]
     ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
     ibs_dep_ipcw = dep_evaluator.integrated_brier_score(method="IPCW", num_points=10)
     mae_dep_bg = dep_evaluator.mae(method="BG")
     mae_dep_ipcw = dep_evaluator.mae(method="IPCW")
     
-    print(f"Dep CI: {ci_dep:.4f}, Dep IBS BG: {ibs_dep_bg:.4f}, Dep IBS IPCW: {ibs_dep_ipcw:.4f}, " +
+    print(f"Dep CI BG: {ci_dep_bg:.4f}, Dep IBS BG: {ibs_dep_bg:.4f}, Dep IBS IPCW: {ibs_dep_ipcw:.4f}, " +
           f"Dep MAE BG: {mae_dep_bg:.4f}, Dep MAE IPCW: {mae_dep_ipcw:.4f}")

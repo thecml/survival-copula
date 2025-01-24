@@ -230,7 +230,7 @@ class DependentEvaluator:
             cindex, concordant_pairs, discordant_pairs, risk_ties, time_ties = estimate_concordance_index(
                 event_indicators, event_times, estimate=risks, bg_event_time=bg_event_times, partial_weights=partial_weights)
         elif method == "IPCW":
-            pass
+            raise NotImplementedError()
         else:
             raise NotImplementedError()
         
@@ -297,7 +297,8 @@ class DependentEvaluator:
             # Use the CG estimator for IPCW
             #ipc_model = CopulaGraphic(train_event_times, inverse_train_event_indicators,
             #                          copula_name=copula_name, alpha=alpha)
-            ipc_model = CopulaGraphic(train_event_times, inverse_train_event_indicators)
+            ipc_model = CopulaGraphic(train_event_times, inverse_train_event_indicators,
+                                      copula_name=copula_name, alpha=alpha)
 
             # Category one calculates IPCW weight at observed time point.
             # Category one is individuals with event time lower than the time of interest and were NOT censored.
@@ -379,8 +380,10 @@ class DependentEvaluator:
             errors = np.empty(predicted_times.size)
             errors[event_indicators] = event_times[event_indicators] - predicted_times[event_indicators]
             errors[~event_indicators] = best_guesses - predicted_times[~event_indicators]
+            
             return np.average(error_func(errors), weights=weights)
-        elif method == "IPCW": # IPCW-V1 with CG estimator
+        
+        elif method == "IPCW": # CG with IPCW-V1 weighting
             best_guesses = np.empty(shape=n_test)
             for i in range(n_test):
                 if event_indicators[i] == 1:
@@ -395,4 +398,5 @@ class DependentEvaluator:
             weights = np.delete(weights, nan_idx)
             
             errors = best_guesses - predicted_times
-            return np.average(np.abs(errors), weights=weights)
+            
+            return np.average(error_func(errors), weights=weights)
