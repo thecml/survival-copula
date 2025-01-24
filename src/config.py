@@ -10,7 +10,7 @@ data_cfg = {
     "alpha_e2": 17,
     "gamma_e1": 6,
     "gamma_e2": 4,
-    "n_samples": 500,
+    "n_samples": 1000,
     "n_features": 10,
 }
 

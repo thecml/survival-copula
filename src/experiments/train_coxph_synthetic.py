@@ -10,7 +10,7 @@ from sksurv.linear_model import CoxPHSurvivalAnalysis
 from SurvivalEVAL.Evaluations.util import predict_median_survival_time
 from scipy.interpolate import interp1d
 
-from metrics import ci_dependent, ibs_dependent, mae_dependent
+from metrics import DependentEvaluator
 from utility.survival import (convert_to_structured, kendall_tau_to_theta,
                               make_stratified_split, make_time_bins)
 
@@ -28,7 +28,7 @@ if __name__ == "__main__":
     
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--k_tau', type=float, default=0.7)
-    parser.add_argument('--copula_name', type=str, default="frank")
+    parser.add_argument('--copula_name', type=str, default="clayton")
     parser.add_argument('--linear', action='store_false')
     
     args = parser.parse_args()
@@ -101,16 +101,15 @@ if __name__ == "__main__":
     print(f"Cens CI: {ci_cens:.4f}, Cens IBS: {ibs_cens:.5f}, Cens MAE: {mae_cens:.4f}")
 
     # Calculate dependent metrics
-    dep_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                      data_train.time.values, data_train.event.values)
+    dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
+                                       data_train.time.values, data_train.event.values, copula_name=copula_name,
+                                       alpha=copula_theta)
     predicted_times = dep_evaluator.predict_time_from_curve(predict_median_survival_time)
-    ci_dep = ci_dependent(predicted_times, time_bins, data_test.time.values, data_test.event.values,
-                        data_train.time.values, data_train.event.values, copula_name=copula_name,
-                        alpha=copula_theta)
-    ibs_dep = ibs_dependent(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                            data_train.time.values, data_train.event.values, num_points=10, 
-                            copula_name=copula_name, alpha=copula_theta)
-    mae_dep = mae_dependent(predicted_times, data_test.time.values, data_test.event.values,
-                            data_train.time.values, data_train.event.values, copula_name=copula_name,
-                            alpha=copula_theta)
-    print(f"Dep CI: {ci_dep:.4f}, Dep IBS: {ibs_dep:.4f}, Dep MAE: {mae_dep:.4f}")
+    ci_dep = dep_evaluator.concordance(method="BG")[0]
+    ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
+    ibs_dep_ipcw = dep_evaluator.integrated_brier_score(method="IPCW", num_points=10)
+    mae_dep_bg = dep_evaluator.mae(method="BG")
+    mae_dep_ipcw = dep_evaluator.mae(method="IPCW")
+    
+    print(f"Dep CI: {ci_dep:.4f}, Dep IBS BG: {ibs_dep_bg:.4f}, Dep IBS IPCW: {ibs_dep_ipcw:.4f}, " +
+          f"Dep MAE BG: {mae_dep_bg:.4f}, Dep MAE IPCW: {mae_dep_ipcw:.4f}")
