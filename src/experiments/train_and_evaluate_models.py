@@ -23,6 +23,7 @@ from trainer import train_copula_model
 
 from sksurv.linear_model import CoxPHSurvivalAnalysis
 from sksurv.ensemble import GradientBoostingSurvivalAnalysis, RandomSurvivalForest
+from sksurv.metrics import concordance_index_ipcw
 
 np.random.seed(0)
 torch.manual_seed(0)
@@ -228,8 +229,11 @@ if __name__ == "__main__":
         # Calculate censored metrics
         censored_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                                data_train.time.values, data_train.event.values)
-        ci = censored_evaluator.concordance()[0]
-        ibs = censored_evaluator.integrated_brier_score(num_points=10)
+        ci_harrell = censored_evaluator.concordance()[0]
+        predicted_times = censored_evaluator.predict_time_from_curve(predict_median_survival_time)
+        risks = -1 * predicted_times
+        ci_uno = concordance_index_ipcw(y_train, y_test, risks)[0]
+        ibs_ipcw = censored_evaluator.integrated_brier_score(num_points=10)
         mae_uncensored = censored_evaluator.mae(method="Uncensored")
         mae_hinge = censored_evaluator.mae(method="Hinge")
         mae_margin = censored_evaluator.mae(method="Margin", weighted=True)
@@ -250,11 +254,11 @@ if __name__ == "__main__":
         # Create results
         model_results = pd.DataFrame()
         result_row = pd.Series([seed, model_name, best_copula_name, dataset_name, strategy, best_copula_theta,
-                                ci_true, ibs_true, mae_true, ci, ibs, mae_uncensored, mae_hinge, mae_margin,
+                                ci_true, ibs_true, mae_true, ci_harrell, ci_uno, ibs_ipcw, mae_uncensored, mae_hinge, mae_margin,
                                 mae_ipcwv1, mae_ipcwv2, mae_pseudo, ci_dep_ipcw, ibs_dep_bg, ibs_dep_ipcw,
                                 mae_dep_bg, mae_dep_ipcw],
                                 index=["Seed", "ModelName", "Copula", "Dataset", "Strategy", "Theta",
-                                       "CITrue", "IBSTrue", "MAETrue", "HarrellCI", "IBSIPCW", "MAEUncens",
+                                       "CITrue", "IBSTrue", "MAETrue", "HarrellCI", "UnoCI", "IBSIPCW", "MAEUncens",
                                        "MAEHinge", "MAEMargin", "MAEIPCWV1", "MAEIPCWV2", "MAEPseudo",
                                        "CIDepIPCW", "IBSDepBG", "IBSDepIPCW", "MAEDepBG", "MAEDepIPCW"])
         print(result_row)
