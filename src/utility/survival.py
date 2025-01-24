@@ -65,7 +65,7 @@ def reformat_survival(
     return x, y
 
 def convert_to_structured(T, E):
-    default_dtypes = {"names": ("event", "time"), "formats": ("bool", "i4")}
+    default_dtypes = {"names": ("event", "time"), "formats": ("bool", "f8")}
     concat = list(zip(E, T))
     return np.array(concat, dtype=default_dtypes)
 

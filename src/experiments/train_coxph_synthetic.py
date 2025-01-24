@@ -14,6 +14,8 @@ from metrics import DependentEvaluator
 from utility.survival import (convert_to_structured, kendall_tau_to_theta,
                               make_stratified_split, make_time_bins)
 
+from sksurv.metrics import concordance_index_ipcw
+
 np.random.seed(0)
 torch.manual_seed(0)
 random.seed(0)
@@ -23,12 +25,21 @@ torch.set_default_dtype(dtype)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+data_cfg = {
+    "alpha_e1": 19,
+    "alpha_e2": 17,
+    "gamma_e1": 6,
+    "gamma_e2": 4,
+    "n_samples": 1000,
+    "n_features": 10,
+}
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--k_tau', type=float, default=0.5)
-    parser.add_argument('--copula_name', type=str, default="clayton")
+    parser.add_argument('--k_tau', type=float, default=0.25)
+    parser.add_argument('--copula_name', type=str, default="frank")
     parser.add_argument('--linear', action='store_false')
     
     args = parser.parse_args()
@@ -41,7 +52,7 @@ if __name__ == "__main__":
     print(f"Theta goal: {copula_theta}")
     
     # Load data
-    dl = SingleEventSyntheticDataLoader().load_data(cfg.data_cfg, k_tau=k_tau, copula_name=copula_name,
+    dl = SingleEventSyntheticDataLoader().load_data(data_cfg, k_tau=k_tau, copula_name=copula_name,
                                                     linear=linear, device=device, dtype=dtype)
     df = dl.get_data()
     df['true_time'] = dl.true_event_times
@@ -67,7 +78,7 @@ if __name__ == "__main__":
     y_test = convert_to_structured(df_test['time'], df_test['event'])
     
     # Make time bins
-    time_bins = make_time_bins(df_train['time'], event=df_train['event'], dtype=dtype).to(device)
+    time_bins = make_time_bins(y_train['time'], event=y_train['event'], dtype=dtype).to(device)
     time_bins = torch.cat((torch.tensor([0]).to(device), time_bins)).cpu().numpy()
     
     # Train Cox model
@@ -94,10 +105,13 @@ if __name__ == "__main__":
     # Calculate censored metrics
     censored_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                            data_train.time.values, data_train.event.values)
-    ci_cens = censored_evaluator.concordance()[0]
+    ci_harrell = censored_evaluator.concordance()[0]
+    predicted_times = censored_evaluator.predict_time_from_curve(predict_median_survival_time)
+    risks = -1 * predicted_times
+    ci_uno = concordance_index_ipcw(y_train, y_test, risks)[0]
     ibs_cens = censored_evaluator.integrated_brier_score(num_points=10)
     mae_cens = censored_evaluator.mae(method="IPCW-v1")
-    print(f"Cens CI: {ci_cens:.4f}, Cens IBS: {ibs_cens:.5f}, Cens MAE: {mae_cens:.4f}")
+    print(f"Harrell CI: {ci_harrell:.4f}, Uno CI: {ci_uno:.4f}, IPCW IBS: {ibs_cens:.5f}, IPCWv1 MAE: {mae_cens:.4f}")
 
     # Calculate dependent metrics
     dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,

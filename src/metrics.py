@@ -220,7 +220,7 @@ class DependentEvaluator:
             censor_times = event_times[~event_indicators]
             partial_weights = np.ones_like(event_indicators, dtype=float)
             partial_weights[~event_indicators] = 1 - cg_model.predict(censor_times)
-
+            
             best_guesses = cg_model.best_guess(censor_times)
             best_guesses[censor_times > cg_linear_zero] = censor_times[censor_times > cg_linear_zero]
 

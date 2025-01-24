@@ -150,8 +150,7 @@ class SingleEventSyntheticDataLoader(BaseDataLoader):
     
         columns = [f'X{i}' for i in range(n_features)]
         self.X = pd.DataFrame(X.cpu(), columns=columns)
-        self.y_e = event_indicators
-        self.y_t = observed_times
+        self.y = convert_to_structured(observed_times, event_indicators)
         self.dgps = [dgp1, dgp2]
         self.n_events = 1
         
