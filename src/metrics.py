@@ -123,19 +123,40 @@ def mae_dependent(predicted_times: np.ndarray,
     if train_event_indicators is not None:
         train_event_indicators = train_event_indicators.astype(bool)
         
-    censor_times = event_times[~event_indicators]
-    weights = np.ones(n_test)
-    
     cg_model = CopulaGraphic(train_event_times, train_event_indicators,
                              copula_name=copula_name, alpha=alpha)
     cg_linear_zero = cg_model.cg_linear_zero
+    if np.isinf(cg_linear_zero):
+        cg_linear_zero = max(cg_model.survival_times)
     
-    best_guesses = cg_model.best_guess(censor_times)
-    best_guesses[censor_times > cg_linear_zero] = censor_times[censor_times > cg_linear_zero]
+    censor_times = event_times[~event_indicators]
+    weights = np.ones(n_test)
     
-    errors = np.empty(predicted_times.size)
-    errors[event_indicators] = event_times[event_indicators] - predicted_times[event_indicators]
-    errors[~event_indicators] = best_guesses - predicted_times[~event_indicators]
+    # Weighted = True
+    weights[~event_indicators] = 1 - cg_model.predict(censor_times)
+    
+    # IPCW-v1
+    best_guesses = np.empty(shape=n_test)
+    for i in range(n_test):
+        if event_indicators[i] == 1:
+            best_guesses[i] = event_times[i]
+        else:
+            # Numpy will throw a warning if afterward_event_times are all false. TODO: consider change the code.
+            afterward_event_idx = train_event_times[train_event_indicators == 1] > event_times[i]
+            best_guesses[i] = np.mean(train_event_times[train_event_indicators == 1][afterward_event_idx])
+    nan_idx = np.argwhere(np.isnan(best_guesses))
+    predicted_times = np.delete(predicted_times, nan_idx)
+    best_guesses = np.delete(best_guesses, nan_idx)
+    weights = np.delete(weights, nan_idx)
+    
+    errors = best_guesses - predicted_times
+            
+    #best_guesses = cg_model.best_guess(censor_times)
+    #best_guesses[censor_times > cg_linear_zero] = censor_times[censor_times > cg_linear_zero]
+    
+    #errors = np.empty(predicted_times.size)
+    #errors[event_indicators] = event_times[event_indicators] - predicted_times[event_indicators]
+    #errors[~event_indicators] = best_guesses - predicted_times[~event_indicators]
     
     return np.average(np.abs(errors), weights=weights)
 

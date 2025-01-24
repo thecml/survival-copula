@@ -15,7 +15,7 @@ def map_strategy_name(strategy):
 
 def calculate_errors(results, dataset, strategy, model_names):
     # Metrics to compute
-    metrics = ["CI", "CIDep", "IBS", "IBSDep", "MAEHinge", "MAEMargin", "MAEPseudo", "MAEDep"]
+    metrics = ["MAEHinge", "MAEMargin", "MAEIPCWV1", "MAEIPCWV2", "MAEPseudo", "MAEDep"]
     true_metrics = {f"{metric}True": metric for metric in ["CI", "IBS", "MAE"]}
     
     # Initialize error storage

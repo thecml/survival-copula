@@ -97,7 +97,7 @@ if __name__ == "__main__":
                                            data_train.time.values, data_train.event.values)
     ci_cens = censored_evaluator.concordance()[0]
     ibs_cens = censored_evaluator.integrated_brier_score(num_points=10)
-    mae_cens = censored_evaluator.mae(method="Margin")
+    mae_cens = censored_evaluator.mae(method="IPCW-v1")
     print(f"Cens CI: {ci_cens:.4f}, Cens IBS: {ibs_cens:.5f}, Cens MAE: {mae_cens:.4f}")
 
     # Calculate dependent metrics
