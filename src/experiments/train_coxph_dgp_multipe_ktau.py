@@ -34,9 +34,10 @@ data_cfg = {
     "n_features": 10,
 }
 
-SEEDS = list(range(0, 10))
-K_TAU = [0.0, 0.25, 0.5, 0.75]
+SEEDS = list(range(0, 100))
 COPULA_NAMES = ["clayton", "frank"]
+K_TAU = [0.0, 0.25, 0.5, 0.75]
+DATA = [(500, 10), (1000, 10), (5000, 10), (10000, 10)]
 LINEAR = True
 
 if __name__ == "__main__":
@@ -44,94 +45,103 @@ if __name__ == "__main__":
     for seed in SEEDS:
         for copula_name in COPULA_NAMES:
             for k_tau in K_TAU:
-                print(f"Running: {seed}, {copula_name}, {k_tau}")
-                results_dict[(seed, copula_name, k_tau)] = {} # tuple as key
-                
-                # Load data
-                dl = SingleEventSyntheticDataLoader().load_data(data_cfg, k_tau=k_tau, copula_name=copula_name,
-                                                                linear=LINEAR, device=device, dtype=dtype)
-                df = dl.get_data()
-                df['true_time'] = dl.true_event_times
-                df_train, df_valid, df_test = make_stratified_split(df, stratify_colname='time', frac_train=0.7,
-                                                                    frac_valid=0.1, frac_test=0.2,
-                                                                    random_state=0)
-        
-                # Process data
-                data_train = df_train.drop(columns=["true_time"])
-                true_test_time = df_test.true_time.values
-                true_test_event = np.ones(df_test.shape[0])
-                data_valid = df_valid.drop(columns=["true_time"])
-                data_test = df_test.drop(columns=["true_time"])
-                X_train = data_train.drop(columns=["time", "event"])
-                X_valid = data_valid.drop(columns=["time", "event"])
-                X_test = data_test.drop(columns=["time", "event"])
-                
-                # Format data
-                y_train = convert_to_structured(df_train['time'], df_train['event'])
-                y_valid = convert_to_structured(df_valid['time'], df_valid['event'])
-                y_test = convert_to_structured(df_test['time'], df_test['event'])
-        
-                # Make time bins
-                time_bins = make_time_bins(y_train['time'], event=y_train['event'], dtype=dtype).to(device)
-                time_bins = torch.cat((torch.tensor([0]).to(device), time_bins)).cpu().numpy()
-        
-                # Train Cox model
-                model = CoxPHSurvivalAnalysis(alpha=0.0001)
-                model.fit(X_train, y_train)
-                survival_outputs = model.predict_survival_function(X_test)
-                survival_outputs = np.row_stack([fn(model.unique_times_) for fn in survival_outputs])
-                spline = interp1d(model.unique_times_,
-                                survival_outputs,
-                                kind='linear', fill_value='extrapolate')
-                survival_outputs = spline(time_bins)
-        
-                # Make dataframe
-                survival_outputs = pd.DataFrame(survival_outputs, columns=time_bins)
-                survival_outputs[0] = 1
-        
-                # Create true evaluator to calculate true metrics
-                true_evaluator = SurvivalEvaluator(survival_outputs, time_bins, true_test_time, true_test_event)
-                ci_true = true_evaluator.concordance()[0]
-                ibs_true = true_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
-                mae_true = true_evaluator.mae(method="Uncensored")
-        
-                # Calculate censored metrics
-                censored_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                                    data_train.time.values, data_train.event.values)
-                ci_harrell = censored_evaluator.concordance()[0]
-                predicted_times = censored_evaluator.predict_time_from_curve(predict_median_survival_time)
-                risks = -1 * predicted_times
-                ci_uno = concordance_index_ipcw(y_train, y_test, risks, tau=y_train['time'].max())[0]
-                ibs_ipcw = censored_evaluator.integrated_brier_score(num_points=10)
-                mae_margin = censored_evaluator.mae(method="Margin", weighted=True)
-                
-                # Calculate errors
-                ci_harrell_error = abs(ci_true - ci_harrell)
-                ci_uno_error = abs(ci_true - ci_uno)
-                ibs_ipcw_error = abs(ibs_true - ibs_ipcw)
-                mae_margin_error = abs(mae_true - mae_margin)
+                for sample_cfg in DATA:
+                    n_samples = sample_cfg[0]
+                    n_features = sample_cfg[1]
+                    print(f"Running: {seed}, {copula_name}, {k_tau}, {n_samples}, {n_features}")
+                    
+                    results_dict[(seed, copula_name, k_tau, n_samples, n_features)] = {} # tuple as key
+                    
+                    data_cfg['n_samples'] = n_samples
+                    data_cfg['n_features'] = n_features
+                    
+                    # Load data
+                    dl = SingleEventSyntheticDataLoader().load_data(data_cfg, k_tau=k_tau, copula_name=copula_name,
+                                                                    linear=LINEAR, device=device, dtype=dtype)
+                    df = dl.get_data()
+                    df['true_time'] = dl.true_event_times
+                    df_train, df_valid, df_test = make_stratified_split(df, stratify_colname='time', frac_train=0.7,
+                                                                        frac_valid=0.1, frac_test=0.2,
+                                                                        random_state=0)
+            
+                    # Process data
+                    data_train = df_train.drop(columns=["true_time"])
+                    true_test_time = df_test.true_time.values
+                    true_test_event = np.ones(df_test.shape[0])
+                    data_valid = df_valid.drop(columns=["true_time"])
+                    data_test = df_test.drop(columns=["true_time"])
+                    X_train = data_train.drop(columns=["time", "event"])
+                    X_valid = data_valid.drop(columns=["time", "event"])
+                    X_test = data_test.drop(columns=["time", "event"])
+                    
+                    # Format data
+                    y_train = convert_to_structured(df_train['time'], df_train['event'])
+                    y_valid = convert_to_structured(df_valid['time'], df_valid['event'])
+                    y_test = convert_to_structured(df_test['time'], df_test['event'])
+            
+                    # Make time bins
+                    time_bins = make_time_bins(y_train['time'], event=y_train['event'], dtype=dtype).to(device)
+                    time_bins = torch.cat((torch.tensor([0]).to(device), time_bins)).cpu().numpy()
+            
+                    # Train Cox model
+                    model = CoxPHSurvivalAnalysis(alpha=0.0001)
+                    model.fit(X_train, y_train)
+                    survival_outputs = model.predict_survival_function(X_test)
+                    survival_outputs = np.row_stack([fn(model.unique_times_) for fn in survival_outputs])
+                    spline = interp1d(model.unique_times_,
+                                    survival_outputs,
+                                    kind='linear', fill_value='extrapolate')
+                    survival_outputs = spline(time_bins)
+            
+                    # Make dataframe
+                    survival_outputs = pd.DataFrame(survival_outputs, columns=time_bins)
+                    survival_outputs[0] = 1
+            
+                    # Create true evaluator to calculate true metrics
+                    true_evaluator = SurvivalEvaluator(survival_outputs, time_bins, true_test_time, true_test_event)
+                    ci_true = true_evaluator.concordance()[0]
+                    ibs_true = true_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
+                    mae_true = true_evaluator.mae(method="Uncensored")
+            
+                    # Calculate censored metrics
+                    censored_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
+                                                        data_train.time.values, data_train.event.values)
+                    ci_harrell = censored_evaluator.concordance()[0]
+                    predicted_times = censored_evaluator.predict_time_from_curve(predict_median_survival_time)
+                    risks = -1 * predicted_times
+                    ci_uno = concordance_index_ipcw(y_train, y_test, risks, tau=y_train['time'].max())[0]
+                    ibs_ipcw = censored_evaluator.integrated_brier_score(num_points=10)
+                    mae_margin = censored_evaluator.mae(method="Margin", weighted=True)
+                    
+                    # Calculate errors
+                    ci_harrell_error = abs(ci_true - ci_harrell)
+                    ci_uno_error = abs(ci_true - ci_uno)
+                    ibs_ipcw_error = abs(ibs_true - ibs_ipcw)
+                    mae_margin_error = abs(mae_true - mae_margin)
 
-                # Store results in the dictionary
-                results_dict[(seed, copula_name, k_tau)] = {
-                    "ci_harrell_error": ci_harrell_error,
-                    "ci_uno_error": ci_uno_error,
-                    "ibs_ipcw_error": ibs_ipcw_error,
-                    "mae_margin_error": mae_margin_error
-                }
-                
-        # Flatten the nested dictionary into a list of rows
-        flattened_results = []
-        for (seed, copula_name, k_tau), metrics in results_dict.items():
-            flattened_results.append({
-                "seed": seed,
-                "copula_name": copula_name,
-                "k_tau": k_tau,
-                **metrics
-            })
-                
-        results_df = pd.DataFrame(flattened_results)
+                    # Store results in the dictionary
+                    results_dict[(seed, copula_name, k_tau, n_samples, n_features)] = {
+                        "ci_harrell_error": ci_harrell_error,
+                        "ci_uno_error": ci_uno_error,
+                        "ibs_ipcw_error": ibs_ipcw_error,
+                        "mae_margin_error": mae_margin_error
+                    }
+                    
+            # Flatten the nested dictionary into a list of rows
+            flattened_results = []
+            for (seed, copula_name, k_tau, n_samples, n_features), metrics in results_dict.items():
+                flattened_results.append({
+                    "seed": seed,
+                    "copula_name": copula_name,
+                    "k_tau": k_tau,
+                    "n_samples": n_samples,
+                    "n_features": n_features,
+                    **metrics
+                })
+                    
+            results_df = pd.DataFrame(flattened_results)
 
-        # Save results to a CSV file
-        filename = f"{cfg.RESULTS_DIR}/dgp_error_over_ktau.csv"
-        results_df.to_csv(filename, index=False)
-    
+            # Save results to a CSV file
+            filename = f"{cfg.RESULTS_DIR}/dgp_error_over_ktau.csv"
+            results_df.to_csv(filename, index=False)
+        
