@@ -6,8 +6,7 @@ from data_loader import get_data_loader
 from utility.preprocessor import Preprocessor
 
 datasets = ["gbsg", "metabric", "mimic", "nacd", "support", "whas", "aids",
-            "seer_brain", "seer_breast", "seer_liver"]
-
+            "seer_brain", "seer_breast", "seer_liver", "seer_prostate", "seer_stomach"]
 dataset_info = []
 
 # Iterate over datasets and axes
@@ -34,7 +33,7 @@ for data_name in datasets:
     n_features_after = X.shape[1]
 
     dataset_info.append((data_name.upper(), n_samples, n_features, n_features_after,
-                         censor_rate,  n_events / n_samples * 100, max_time))
+                         censor_rate,  n_events, max_time))
 
 # Sort datasets by the number of samples (n_samples)
 dataset_info_sorted = sorted(dataset_info, key=lambda x: x[1])
@@ -42,4 +41,4 @@ dataset_info_sorted = sorted(dataset_info, key=lambda x: x[1])
 # Print the sorted dataset information in LaTeX format
 for info in dataset_info_sorted:
     print(f"{info[0]} & {info[1]} & {info[2]} ({info[3]}) & {info[4]:.1f}\% & "
-          f"{info[5]:.1f}\% & {info[6]} \\\\")
+          f"{info[5]:.0f} & {info[6]:.0f} \\\\")

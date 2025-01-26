@@ -7,7 +7,7 @@ from sksurv.ensemble import GradientBoostingSurvivalAnalysis
 from sksurv.linear_model import CoxPHSurvivalAnalysis
 from sksurv.util import Surv
 
-from misc.plot import compare_km_curves
+from misc.plot_km_curves import compare_km_curves
 from utility.survival import convert_to_structured
 
 def combine_data_with_censor(

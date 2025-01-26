@@ -57,7 +57,7 @@ def calculate_errors(results, dataset, strategy, model_names):
 if __name__ == "__main__":
     results = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "dependent.csv"))
 
-    # Scale metrics to percentage
+    # Scale metrics by percentage
     cols_to_scale = ["CITrue", "HarrellCI", "CIDepBG", "IBSTrue", "IBSIPCW", "IBSDepBG", "IBSDepIPCW"]
     results[cols_to_scale] = results[cols_to_scale] * 100
 

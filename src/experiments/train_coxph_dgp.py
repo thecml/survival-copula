@@ -38,7 +38,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--k_tau', type=float, default=0.5)
+    parser.add_argument('--k_tau', type=float, default=0.75)
     parser.add_argument('--copula_name', type=str, default="clayton")
     parser.add_argument('--linear', action='store_false')
     
@@ -108,7 +108,7 @@ if __name__ == "__main__":
     ci_harrell = censored_evaluator.concordance()[0]
     predicted_times = censored_evaluator.predict_time_from_curve(predict_median_survival_time)
     risks = -1 * predicted_times
-    ci_uno = concordance_index_ipcw(y_train, y_test, risks)[0]
+    ci_uno = concordance_index_ipcw(y_train, y_test, risks, tau=y_train['time'].max())[0]
     ibs_cens = censored_evaluator.integrated_brier_score(num_points=10)
     mae_cens = censored_evaluator.mae(method="IPCW-v1", weighted=True)
     print(f"Harrell CI: {ci_harrell:.4f}, Uno CI: {ci_uno:.4f}, IPCW IBS: {ibs_cens:.5f}, IPCWv1 MAE: {mae_cens:.4f}")

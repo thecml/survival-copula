@@ -236,25 +236,24 @@ class DependentEvaluator:
             predicted_times = np.clip(self.predicted_event_times, a_max=cg_linear_zero, a_min=None)
             risks = -1 * predicted_times
             
-            tau = None
+            tau = max(train_event_times) # truncate
             tied_tol = 1e-8
             
             if tau is not None:
                 mask = event_times < tau
-                survival_test = survival_test[mask]
+                event_times_mask = event_times[mask]
             
             inverse_train_event_indicators = 1 - train_event_indicators
             cg_model_censor = CopulaGraphic(train_event_times, inverse_train_event_indicators,
                                             copula_name=copula_name, alpha=alpha)
-            ipcw_test = cg_model_censor.predict(event_times)
+            ipcw_test = cg_model_censor.predict(event_times_mask)
             
             if tau is None:
                 ipcw = ipcw_test
             else:
-                raise NotImplementedError()
-                #ipcw = np.empty(risks.shape[0], dtype=ipcw_test.dtype)
-                #ipcw[mask] = ipcw_test
-                #ipcw[~mask] = 0
+                ipcw = np.empty(risks.shape[0], dtype=ipcw_test.dtype)
+                ipcw[mask] = ipcw_test
+                ipcw[~mask] = 0
 
             w = np.square(ipcw)
             

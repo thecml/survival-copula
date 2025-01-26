@@ -125,7 +125,7 @@ if __name__ == "__main__":
         elif copula_name == "frank":
             copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
         dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
-                                                                          valid_dict, copula=copula, n_epochs=10000,
+                                                                          valid_dict, copula=copula, n_epochs=100, #10000,
                                                                           patience=100, lr=1e-3, batch_size=n_samples,
                                                                           copula_name=copula_name, verbose=False)
         copula_theta = float(copula.parameters()[0][0])
@@ -232,7 +232,7 @@ if __name__ == "__main__":
         ci_harrell = censored_evaluator.concordance()[0]
         predicted_times = censored_evaluator.predict_time_from_curve(predict_median_survival_time)
         risks = -1 * predicted_times
-        ci_uno = concordance_index_ipcw(y_train, y_test, risks)[0]
+        ci_uno = concordance_index_ipcw(y_train, y_test, risks, tau=y_train['time'].max())[0]
         ibs_ipcw = censored_evaluator.integrated_brier_score(num_points=10)
         mae_uncensored = censored_evaluator.mae(method="Uncensored")
         mae_hinge = censored_evaluator.mae(method="Hinge")
