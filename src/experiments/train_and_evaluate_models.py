@@ -125,8 +125,8 @@ if __name__ == "__main__":
         elif copula_name == "frank":
             copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
         dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
-                                                                          valid_dict, copula=copula, n_epochs=100000,
-                                                                          patience=1000, lr=1e-3, batch_size=n_samples,
+                                                                          valid_dict, copula=copula, n_epochs=10000,
+                                                                          patience=100, lr=1e-3, batch_size=n_samples,
                                                                           copula_name=copula_name, verbose=False)
         copula_theta = float(copula.parameters()[0][0])
         k = sum(param.numel() for param in dep_model1.parameters())
@@ -273,3 +273,4 @@ if __name__ == "__main__":
             results = pd.DataFrame(columns=model_results.columns)
         results = results.append(model_results, ignore_index=True)
         results.to_csv(filename, index=False)
+        
