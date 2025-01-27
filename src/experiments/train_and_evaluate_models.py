@@ -117,7 +117,7 @@ if __name__ == "__main__":
     
     # Estimate theta on the new dataset and find the best copula
     results_list = []
-    for copula_name in ['clayton', 'frank']:
+    for copula_name in ["clayton", "frank"]:
         dep_model1 = Weibull_log_linear(n_features, dtype=dtype, device=device) # censoring model
         dep_model2 = Weibull_log_linear(n_features, dtype=dtype, device=device) # event model
         if copula_name == "clayton":
@@ -125,8 +125,8 @@ if __name__ == "__main__":
         elif copula_name == "frank":
             copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
         dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
-                                                                          valid_dict, copula=copula, n_epochs=10000,
-                                                                          patience=100, lr=1e-3, batch_size=n_samples,
+                                                                          valid_dict, copula=copula, n_epochs=100000,
+                                                                          patience=1000, lr=1e-3, batch_size=n_samples,
                                                                           copula_name=copula_name, verbose=False)
         copula_theta = float(copula.parameters()[0][0])
         k = sum(param.numel() for param in dep_model1.parameters())
@@ -137,8 +137,9 @@ if __name__ == "__main__":
     results_df = pd.DataFrame(results_list)
     results_df['AIC'] = 2*results_df['num_params'] + 2*results_df['min_val_loss'] # AIC
     
-    # Filter for copulas that capture dependence (theta > 0.01)
-    valid_copulas = results_df[results_df['copula_theta'] > 0.01]
+    # Filter for copulas that capture dependence (theta > 0.001)
+    threshold = 1e-3
+    valid_copulas = results_df[(results_df['copula_theta'].abs() >= threshold) & results_df['copula_theta'].notna()]
 
     # Select the copula with the lowest AIC among valid copulas
     if not valid_copulas.empty:
@@ -146,9 +147,9 @@ if __name__ == "__main__":
         best_copula_name = valid_copulas.loc[best_idx, 'copula_name']
         best_copula_theta = valid_copulas.loc[best_idx, 'copula_theta']
     else:
-        # No valid copula found
-        best_copula_name = None
-        best_copula_theta = None
+        # No dependence found, assume independent copula
+        best_copula_name = "clayton"
+        best_copula_theta = 0.001
     
     for model_name in MODELS:
         # Reset seeds
@@ -258,7 +259,7 @@ if __name__ == "__main__":
                                 mae_ipcwv1, mae_ipcwv2, mae_pseudo, ci_dep_ipcw, ibs_dep_bg, ibs_dep_ipcw,
                                 mae_dep_bg, mae_dep_ipcw],
                                 index=["Seed", "ModelName", "Copula", "Dataset", "Strategy", "Theta",
-                                       "CITrue", "IBSTrue", "MAETrue", "HarrellCI", "UnoCI", "IBSIPCW", "MAEUncens",
+                                       "CITrue", "IBSTrue", "MAETrue", "CIHarrell", "CIUno", "IBSIPCW", "MAEUncens",
                                        "MAEHinge", "MAEMargin", "MAEIPCWV1", "MAEIPCWV2", "MAEPseudo",
                                        "CIDepIPCW", "IBSDepBG", "IBSDepIPCW", "MAEDepBG", "MAEDepIPCW"])
         print(result_row)

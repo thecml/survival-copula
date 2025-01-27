@@ -15,7 +15,10 @@ def map_strategy_name(strategy):
 
 def calculate_errors(results, dataset, strategy, model_names):
     # Metrics to compute
-    metrics = ["MAEUncens", "MAEHinge", "MAEMargin", "MAEIPCWV1", "MAEIPCWV2", "MAEDepBG", "MAEDepIPCW"]
+    #metrics = ["IBSIPCW", "IBSDepBG"]
+    #metrics = ["MAEUncens", "MAEHinge", "MAEMargin", "MAEPseudo", "MAEIPCWV1", "MAEDepIPCW"]
+    metrics = ["MAEUncens", "MAEHinge", "MAEMargin", "MAEDepBG"]
+    
     true_metrics = {f"{metric}True": metric for metric in ["CI", "IBS", "MAE"]}
     
     # Initialize error storage
@@ -58,13 +61,13 @@ if __name__ == "__main__":
     results = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "dependent.csv"))
 
     # Scale metrics by percentage
-    cols_to_scale = ["CITrue", "HarrellCI", "CIDepBG", "IBSTrue", "IBSIPCW", "IBSDepBG", "IBSDepIPCW"]
+    cols_to_scale = ["IBSTrue", "IBSIPCW", "IBSDepBG"]
     results[cols_to_scale] = results[cols_to_scale] * 100
 
-    datasets = ["gbsg", "metabric", "mimic", "nacd", "whas", "seer_brain",
-                "seer_breast", "seer_liver", "seer_prostate", "seer_stomach"]
+    datasets = ["gbsg", "metabric", "mimic", "nacd", "support",
+                "seer_brain", "seer_breast", "seer_liver", "seer_prostate", "seer_stomach"]
     strategies = ["original", "top_5", "top_10", "random_25"]
-    model_names = ["coxph"]
+    model_names = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
     for dataset in datasets:
         print(dataset)

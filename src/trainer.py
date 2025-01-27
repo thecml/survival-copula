@@ -71,9 +71,24 @@ def train_copula_model(model1, model2, train_data, val_data,
                 
                 if copula_name == "clayton":
                     for p in copula.parameters():
-                        if p < 0.01:
-                            with torch.no_grad():
-                                copula.theta.data.fill_(0.01)
+                        if p.grad is None:
+                            print("Gradient not computed for parameter.")
+                        else:
+                            if (p < -1) or (p >= torch.inf):
+                                with torch.no_grad():
+                                    copula.theta.data.fill_(0.001)
+
+                if copula_name == "frank":
+                    threshold = 1e-3
+                    for p in copula.parameters():
+                        if p.grad is None:
+                            print("Gradient not computed for parameter.")
+                        else:
+                            grad_norm = p.grad.norm().item()
+                            if grad_norm < threshold:
+                                with torch.no_grad():
+                                    copula.theta.data.fill_(0.001)
+                
             else:
                 optimizer.step()
 
