@@ -38,7 +38,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--k_tau', type=float, default=0.75)
+    parser.add_argument('--k_tau', type=float, default=0)
     parser.add_argument('--copula_name', type=str, default="clayton")
     parser.add_argument('--linear', action='store_false')
     
@@ -100,7 +100,6 @@ if __name__ == "__main__":
     ci_true = true_evaluator.concordance()[0]
     ibs_true = true_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
     mae_true = true_evaluator.mae(method="Uncensored")
-    print(f"True CI: {ci_true:.4f}, True IBS: {ibs_true:.4f}, True MAE: {mae_true:.4f}")
     
     # Calculate censored metrics
     censored_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
@@ -110,8 +109,7 @@ if __name__ == "__main__":
     risks = -1 * predicted_times
     ci_uno = concordance_index_ipcw(y_train, y_test, risks, tau=y_train['time'].max())[0]
     ibs_cens = censored_evaluator.integrated_brier_score(num_points=10)
-    mae_cens = censored_evaluator.mae(method="IPCW-v1", weighted=True)
-    print(f"Harrell CI: {ci_harrell:.4f}, Uno CI: {ci_uno:.4f}, IPCW IBS: {ibs_cens:.5f}, IPCWv1 MAE: {mae_cens:.4f}")
+    mae_cens = censored_evaluator.mae(method="Margin", weighted=True)
 
     # Calculate dependent metrics
     dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
@@ -121,7 +119,5 @@ if __name__ == "__main__":
     ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
     ibs_dep_ipcw = dep_evaluator.integrated_brier_score(method="IPCW", num_points=10)
     mae_dep_bg = dep_evaluator.mae(method="BG")
-    mae_dep_ipcw = dep_evaluator.mae(method="IPCW")
     
-    print(f"Dep CI IPCW: {ci_dep_ipcw:.4f}, Dep IBS BG: {ibs_dep_bg:.4f}, Dep IBS IPCW: {ibs_dep_ipcw:.4f}, " +
-          f"Dep MAE BG: {mae_dep_bg:.4f}, Dep MAE IPCW: {mae_dep_ipcw:.4f}")
+    print(f"CI: {ci_true:.4f}, {ci_harrell:.4f}, {ci_uno:.4f}, {ci_dep_ipcw:.4f}")
