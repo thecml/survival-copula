@@ -98,7 +98,7 @@ if __name__ == "__main__":
 
 for idx, dataset in enumerate(datasets):
     n_samples, censoring_rate = get_dataset_info(dataset)
-    print(r"\multirow{4}{*}{\makecell{" + f"{map_dataset_name(dataset)} \\\ (N={n_samples}, C={censoring_rate}\%)" + r"}}")
+    print(r"\multirow{4}{*}{\makecell{" + f"{map_dataset_name(dataset)} \\\ ($N$={n_samples}, $C$={censoring_rate}\%)" + r"}}")
     for strategy in strategies:
         mean_errors, std_errors = calculate_errors(results, dataset, strategy, model_names, metrics)
 
