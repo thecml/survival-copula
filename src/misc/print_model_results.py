@@ -25,7 +25,7 @@ def map_strategy_name(strategy):
         "original": "Original",
         "top_5": "Top 5",
         "top_10": "Top 10",
-        "random_25": "Random 25\\%"
+        "random_25": "Rand. 25\\%"
     }.get(strategy, strategy)
     
 def map_dataset_name(dataset_name):
