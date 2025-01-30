@@ -127,7 +127,7 @@ if __name__ == "__main__":
         dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
                                                                           valid_dict, copula=copula, n_epochs=10000,
                                                                           patience=100, lr=0.001, batch_size=n_samples,
-                                                                          copula_name=copula_name, verbose=True)
+                                                                          copula_name=copula_name, verbose=False)
         copula_theta = float(copula.parameters()[0][0])
         k = sum(param.numel() for param in dep_model1.parameters())
         k += sum(param.numel() for param in dep_model2.parameters())
