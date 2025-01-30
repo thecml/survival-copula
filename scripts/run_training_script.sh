@@ -13,15 +13,15 @@ if [ -f "$results_path" ]; then
   rm $results_path
 fi
 
-seeds=(0 1 2 3 4 5 6 7 8 9)
-dataset_names=("gbsg" "metabric" "mimic" "nacd" "support" "whas" "aids" "seer_brain" "seer_breast" "seer_liver" "seer_prostate" "seer_stomach")
+seeds=(0)
+dataset_names=("metabric" "mimic_all" "mimic_hospital" "seer_brain" "seer_breast" "seer_liver" "seer_prostate" "seer_stomach")
 strategies=('original' 'top_5' 'top_10' 'random_25')
 
 for seed in "${seeds[@]}"; do
     for dataset_name in "${dataset_names[@]}"; do
         for strategy in "${strategies[@]}"; do
             echo "Running with seed=$seed, dataset_name=$dataset_name, strategy=$strategy"
-            python3 $base_path/../src/experiments/train_and_evaluate_models.py --seed "$seed" --dataset_name "$dataset_name" --strategy "$strategy"
+            python3 $base_path/../src/experiments/train_semisynthetic_datasets.py --seed "$seed" --dataset_name "$dataset_name" --strategy "$strategy"
         done
     done
 done

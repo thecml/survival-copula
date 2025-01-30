@@ -68,7 +68,7 @@ def make_synthetic_censoring(strategy: str,
         df_all_copy.event = 1 - df_all_copy.event
         X = df_all_copy[df_all_copy.columns].drop(['time', 'event'], axis=1)
         y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
-        gbsa = GradientBoostingSurvivalAnalysis(random_state=0)
+        gbsa = GradientBoostingSurvivalAnalysis(max_depth=1, random_state=0)
         gbsa.fit(X, y)
         importances = gbsa.feature_importances_
         feature_importances = pd.DataFrame({'Feature': X.columns, 'Importance': importances})
@@ -91,7 +91,7 @@ def make_synthetic_censoring(strategy: str,
         df_all_copy.event = 1 - df_all_copy.event
         X = df_all_copy[df_all_copy.columns].drop(['time', 'event'], axis=1)
         y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
-        gbsa = GradientBoostingSurvivalAnalysis(random_state=0)
+        gbsa = GradientBoostingSurvivalAnalysis(max_depth=1, random_state=0)
         gbsa.fit(X, y)
         importances = gbsa.feature_importances_
         feature_importances = pd.DataFrame({'Feature': X.columns, 'Importance': importances})

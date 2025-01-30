@@ -78,8 +78,10 @@ def get_data_loader(dataset_name: str) -> BaseDataLoader:
         return GbsgDataLoader()
     elif dataset_name == "metabric":
         return MetabricDataLoader()
-    elif dataset_name == "mimic":
-        return MimicDataLoader()
+    elif dataset_name == "mimic_all":
+        return MimicAllDataLoader()
+    elif dataset_name == "mimic_hospital":
+        return MimicHospitalDataLoader()
     elif dataset_name == "nacd":
         return NacdDataLoader()
     elif dataset_name == "support":
@@ -152,7 +154,6 @@ class SingleEventSyntheticDataLoader(BaseDataLoader):
         self.X = pd.DataFrame(X.cpu(), columns=columns)
         self.y = convert_to_structured(observed_times, event_indicators)
         self.dgps = [dgp1, dgp2]
-        self.n_events = 1
         
         return self
     
@@ -179,16 +180,16 @@ class SingleEventSyntheticDataLoader(BaseDataLoader):
             
         return dicts[0], dicts[1], dicts[2]
 
-class MimicDataLoader(BaseDataLoader):
+class MimicAllDataLoader(BaseDataLoader):
     """
     Data loader for MIMIC dataset
     """
-    def load_data(self, n_samples:int = 10000):
+    def load_data(self, n_samples:int = None):
         '''
         t and e order, followed by death
         '''
         path = Path.joinpath(cfg.DATA_DIR, "mimic_all_causes.csv")
-        data = pd.read_csv(path).sample(n_samples)
+        data = pd.read_csv(path)
         skip_cols = ['event', 'is_male', 'time', 'is_white', 'renal', 'cns', 'coagulation', 'cardiovascular']
         cols_standardize = list(set(data.columns.to_list()).symmetric_difference(skip_cols))
         
@@ -209,6 +210,37 @@ class MimicDataLoader(BaseDataLoader):
                 random_state=0):
         raise NotImplementedError()
     
+class MimicHospitalDataLoader(BaseDataLoader):
+    """
+    Data loader for MIMIC dataset
+    """
+    def load_data(self, n_samples:int = None):
+        '''
+        t and e order, followed by death
+        '''
+        path = Path.joinpath(cfg.DATA_DIR, "mimic_hosp_failure.csv")
+        data = pd.read_csv(path)
+        skip_cols = ['event', 'is_male', 'time', 'is_white', 'renal', 'cns', 'coagulation', 'cardiovascular']
+        cols_standardize = list(set(data.columns.to_list()).symmetric_difference(skip_cols))
+        
+        self.num_features = ['age']
+        self.cat_features = ['male', 'is_white', 'ins_medicare', 'ins_medicaid', 'english',
+                             'marital', 'had_ed', 'svrty', 'mtlty']
+        
+        self.X = data.drop(['event', 'time'], axis=1)
+        self.y = convert_to_structured(data['time'], data['event'])
+        self.columns = list(self.X.columns)
+        
+        return self
+
+    def split_data(self,
+                train_size: float,
+                valid_size: float,
+                test_size: float,
+                dtype=torch.float64,
+                random_state=0):
+        raise NotImplementedError()    
+
 class MetabricDataLoader(BaseDataLoader):
     def load_data(self) -> None:
         data = pd.read_feather(Path.joinpath(cfg.DATA_DIR, 'metabric.feather')) 
@@ -348,9 +380,9 @@ class NacdDataLoader(BaseDataLoader):
         raise NotImplementedError()
     
 class SeerBrainDataLoader(BaseDataLoader):
-    def load_data(self, n_samples=10000) -> None:
+    def load_data(self, n_samples=None) -> None:
         path = Path.joinpath(cfg.DATA_DIR, "seer_brain.csv")
-        data = pd.read_csv(path).rename(columns={"Survival months": "time"}).sample(n_samples)
+        data = pd.read_csv(path).rename(columns={"Survival months": "time"})
         data = data.drop(data[data["time"] <= 0].index)  # remove patients with negative or zero survival time
         data.reset_index(drop=True, inplace=True)
 
@@ -375,9 +407,9 @@ class SeerBrainDataLoader(BaseDataLoader):
         raise NotImplementedError()
 
 class SeerBreastDataLoader(BaseDataLoader):
-    def load_data(self, n_samples=10000) -> None:
+    def load_data(self, n_samples=None) -> None:
         path = Path.joinpath(cfg.DATA_DIR, "seer_breast.csv")
-        data = pd.read_csv(path).rename(columns={"Survival months": "time"}).sample(n_samples)
+        data = pd.read_csv(path).rename(columns={"Survival months": "time"})
         data = data.drop(data[data["time"] <= 0].index)  # remove patients with negative or zero survival time
         data.reset_index(drop=True, inplace=True)
 
@@ -401,9 +433,9 @@ class SeerBreastDataLoader(BaseDataLoader):
         raise NotImplementedError()
 
 class SeerLiverDataLoader(BaseDataLoader):
-    def load_data(self, n_samples=10000) -> None:
+    def load_data(self, n_samples=None) -> None:
         path = Path.joinpath(cfg.DATA_DIR, "seer_liver.csv")
-        data = pd.read_csv(path).rename(columns={"Survival months": "time"}).sample(n_samples)
+        data = pd.read_csv(path).rename(columns={"Survival months": "time"})
         data = data.drop(data[data["time"] <= 0].index)  # remove patients with negative or zero survival time
         data.reset_index(drop=True, inplace=True)
 
@@ -427,9 +459,9 @@ class SeerLiverDataLoader(BaseDataLoader):
         raise NotImplementedError()
 
 class SeerProstateDataLoader(BaseDataLoader):
-    def load_data(self, n_samples=10000) -> None:
+    def load_data(self, n_samples=None) -> None:
         path = Path.joinpath(cfg.DATA_DIR, "seer_prostate.csv")
-        data = pd.read_csv(path).rename(columns={"Survival months": "time"}).sample(n_samples)
+        data = pd.read_csv(path).rename(columns={"Survival months": "time"})
         data = data.drop(data[data["time"] <= 0].index)  # remove patients with negative or zero survival time
         data.reset_index(drop=True, inplace=True)
 
@@ -453,9 +485,9 @@ class SeerProstateDataLoader(BaseDataLoader):
         raise NotImplementedError()
     
 class SeerStomachDataLoader(BaseDataLoader):
-    def load_data(self, n_samples=10000) -> None:
+    def load_data(self, n_samples=None) -> None:
         path = Path.joinpath(cfg.DATA_DIR, "seer_stomach.csv")
-        data = pd.read_csv(path).rename(columns={"Survival months": "time"}).sample(n_samples)
+        data = pd.read_csv(path).rename(columns={"Survival months": "time"})
         data = data.drop(data[data["time"] <= 0].index)  # remove patients with negative or zero survival time
         data.reset_index(drop=True, inplace=True)
 

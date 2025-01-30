@@ -34,10 +34,10 @@ data_cfg = {
     "n_features": 10,
 }
 
-SEEDS = list(range(0, 100))
+SEEDS = list(range(0, 10))
 COPULA_NAMES = ["clayton", "frank"]
-K_TAU = [0.0, 0.25, 0.5, 0.75]
-DATA = [(500, 10), (1000, 10), (5000, 10), (10000, 10)]
+K_TAU = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+DATA = [(5000, 10)]
 LINEAR = True
 
 if __name__ == "__main__":
@@ -105,7 +105,7 @@ if __name__ == "__main__":
             
                     # Calculate censored metrics
                     censored_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                                        data_train.time.values, data_train.event.values)
+                                                           data_train.time.values, data_train.event.values)
                     ci_harrell = censored_evaluator.concordance()[0]
                     predicted_times = censored_evaluator.predict_time_from_curve(predict_median_survival_time)
                     risks = -1 * predicted_times
@@ -113,18 +113,35 @@ if __name__ == "__main__":
                     ibs_ipcw = censored_evaluator.integrated_brier_score(num_points=10)
                     mae_margin = censored_evaluator.mae(method="Margin", weighted=True)
                     
+                    # Calculate dependent metrics
+                    theta = kendall_tau_to_theta(copula_name, k_tau)
+                    dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
+                                                       data_train.time.values, data_train.event.values, copula_name=copula_name,
+                                                       alpha=theta)
+                    ci_dep_ipcw = dep_evaluator.concordance(method="IPCW")[0]
+                    ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
+                    #ibs_dep_ipcw = dep_evaluator.integrated_brier_score(method="IPCW", num_points=10)
+                    mae_dep_bg = dep_evaluator.mae(method="BG")
+                    #mae_dep_ipcw = dep_evaluator.mae(method="IPCW")
+                    
                     # Calculate errors
                     ci_harrell_error = abs(ci_true - ci_harrell)
+                    ci_dep_ipcw_error = abs(ci_true - ci_dep_ipcw)
                     ci_uno_error = abs(ci_true - ci_uno)
                     ibs_ipcw_error = abs(ibs_true - ibs_ipcw)
+                    ibs_dep_error = abs(ibs_true - ibs_dep_bg)
                     mae_margin_error = abs(mae_true - mae_margin)
-
+                    mae_dep_error = abs(mae_true - mae_dep_bg)
+                    
                     # Store results in the dictionary
                     results_dict[(seed, copula_name, k_tau, n_samples, n_features)] = {
                         "ci_harrell_error": ci_harrell_error,
+                        "ci_dep_ipcw_error": ci_dep_ipcw_error,
                         "ci_uno_error": ci_uno_error,
                         "ibs_ipcw_error": ibs_ipcw_error,
-                        "mae_margin_error": mae_margin_error
+                        "ibs_dep_error": ibs_dep_error,
+                        "mae_margin_error": mae_margin_error,
+                        "mae_dep_error": mae_dep_error
                     }
                     
             # Flatten the nested dictionary into a list of rows
@@ -142,6 +159,6 @@ if __name__ == "__main__":
             results_df = pd.DataFrame(flattened_results)
 
             # Save results to a CSV file
-            filename = f"{cfg.RESULTS_DIR}/dgp_error_over_ktau.csv"
+            filename = f"{cfg.RESULTS_DIR}/synthetic_results.csv"
             results_df.to_csv(filename, index=False)
         
