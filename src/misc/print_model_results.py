@@ -5,12 +5,27 @@ import config as cfg
 
 N_DECIMALS = 2
 
+def get_dataset_info(dataset_name):
+    return {
+        "whas": (215, "9.3"),
+        "gbsg": (299, "4.0"),
+        "seer_prostate": (1011, "16.4"),
+        "metabric": (1102, "3.8"),
+        "nacd": (1497, "4.7"),
+        "seer_breast": (1685, "9.4"),
+        "mimic": (3301, "11.2"),
+        "seer_stomach": (5311, "16.4"),
+        "seer_liver": (5557, "15.9"),
+        "seer_brain": (5624, "12.1"),
+        "support": (6036, "3.1")
+    }.get(dataset_name, dataset_name)
+
 def map_strategy_name(strategy):
     return {
         "original": "Original",
         "top_5": "Top 5",
         "top_10": "Top 10",
-        "random_25": "Random 25\\%"
+        "random_25": "Rand. 25\\%"
     }.get(strategy, strategy)
     
 def map_dataset_name(dataset_name):
@@ -21,7 +36,6 @@ def map_dataset_name(dataset_name):
         "nacd": "NACD",
         "support": "SUPPORT",
         "whas": "WHAS",
-        "aids": "AIDS",
         "seer_brain": "SEER-brain",
         "seer_breast": "SEER-breast",
         "seer_liver": "SEER-liver",
@@ -70,11 +84,11 @@ def calculate_errors(results, dataset, strategy, model_names, metrics):
 
 if __name__ == "__main__":
     results = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "dependent.csv"))
-    metrics = ["CIHarrell", "CIUno", "CIDepIPCW", "IBSIPCW", "IBSDepIPCW",
+    metrics = ["CIHarrell", "CIUno", "CIDepIPCW", "IBSIPCW", "IBSDepBG",
                "MAEUncens", "MAEHinge", "MAEMargin" ,"MAEPseudo", "MAEDepBG"]
     
     # Scale metrics by percentage
-    cols_to_scale = ["CITrue", "CIHarrell", "CIUno", "CIDepIPCW", "IBSTrue", "IBSIPCW", "IBSDepIPCW"]
+    cols_to_scale = ["CITrue", "CIHarrell", "CIUno", "CIDepIPCW", "IBSTrue", "IBSIPCW", "IBSDepBG"]
     results[cols_to_scale] = results[cols_to_scale] * 100
 
     datasets = ["gbsg", "metabric", "mimic", "nacd", "support",
@@ -83,7 +97,8 @@ if __name__ == "__main__":
     model_names = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
 for idx, dataset in enumerate(datasets):
-    print(r"\multirow{4}{*}{" + f"{map_dataset_name(dataset)}" + r"}")
+    n_samples, censoring_rate = get_dataset_info(dataset)
+    print(r"\multirow{4}{*}{\makecell{" + f"{map_dataset_name(dataset)} \\\ ($N$={n_samples}, $C$={censoring_rate}\%)" + r"}}")
     for strategy in strategies:
         mean_errors, std_errors = calculate_errors(results, dataset, strategy, model_names, metrics)
 
@@ -96,7 +111,7 @@ for idx, dataset in enumerate(datasets):
             k: f"%.{N_DECIMALS}f" % round(v, N_DECIMALS)
             for k, v in std_errors.items()
         }
-
+        
         # Construct the text with mean and std errors
         text = f"& {map_strategy_name(strategy)}" + \
             "".join(f" & {formatted_errors[metric]}$\pm$\\scriptsize" + r"{" + f"{formatted_std_errors[metric]}" + r"}" for metric in mean_errors) + " \\\\"
