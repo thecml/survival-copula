@@ -5,8 +5,8 @@ import config as cfg
 from data_loader import get_data_loader
 from utility.preprocessor import Preprocessor
 
-datasets = ["gbsg", "metabric", "mimic", "nacd", "support", "whas", "aids",
-            "seer_brain", "seer_breast", "seer_liver", "seer_prostate", "seer_stomach"]
+datasets = ["metabric", "mimic_all", "mimic_hospital", "seer_brain",
+            "seer_breast", "seer_liver", "seer_prostate", "seer_stomach"]
 dataset_info = []
 
 # Iterate over datasets and axes
