@@ -2,46 +2,9 @@ import pandas as pd
 from pathlib import Path
 import numpy as np
 import config as cfg
+from utility.data import get_dataset_info, map_dataset_name, map_strategy_name
 
 N_DECIMALS = 2
-
-def get_dataset_info(dataset_name):
-    return {
-        "whas": (215, "9.3"),
-        "gbsg": (299, "4.0"),
-        "seer_prostate": (1011, "16.4"),
-        "metabric": (1102, "3.8"),
-        "nacd": (1497, "4.7"),
-        "seer_breast": (1685, "9.4"),
-        "mimic": (3301, "11.2"),
-        "seer_stomach": (5311, "16.4"),
-        "seer_liver": (5557, "15.9"),
-        "seer_brain": (5624, "12.1"),
-        "support": (6036, "3.1")
-    }.get(dataset_name, dataset_name)
-
-def map_strategy_name(strategy):
-    return {
-        "original": "Original",
-        "top_5": "Top 5",
-        "top_10": "Top 10",
-        "random_25": "Rand. 25\\%"
-    }.get(strategy, strategy)
-    
-def map_dataset_name(dataset_name):
-    return {
-        "gbsg": "GBSG",
-        "metabric": "METABRIC",
-        "mimic": "MIMIC-IV",
-        "nacd": "NACD",
-        "support": "SUPPORT",
-        "whas": "WHAS",
-        "seer_brain": "SEER-brain",
-        "seer_breast": "SEER-breast",
-        "seer_liver": "SEER-liver",
-        "seer_prostate": "SEER-prostate",
-        "seer_stomach": "SEER-stomach",
-    }.get(dataset_name, dataset_name)
                 
 def calculate_errors(results, dataset, strategy, model_names, metrics):
     true_metrics = {f"{metric}True": metric for metric in ["CI", "IBS", "MAE"]}

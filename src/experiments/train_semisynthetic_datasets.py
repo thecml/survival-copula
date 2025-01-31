@@ -41,7 +41,7 @@ if __name__ == "__main__":
     
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--dataset_name', type=str, default='metabric')
-    parser.add_argument('--strategy', type=str, default='top_5')
+    parser.add_argument('--strategy', type=str, default='original')
     
     args = parser.parse_args()
     seed = args.seed
