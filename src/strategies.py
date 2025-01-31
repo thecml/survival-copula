@@ -6,6 +6,7 @@ from lifelines import CoxPHFitter, WeibullAFTFitter
 from sksurv.ensemble import GradientBoostingSurvivalAnalysis
 from sksurv.linear_model import CoxPHSurvivalAnalysis
 from sksurv.util import Surv
+from sklearn.inspection import permutation_importance
 
 from misc.plot_km_curves import compare_km_curves
 from utility.survival import convert_to_structured
@@ -50,13 +51,13 @@ def make_synthetic_censoring(strategy: str,
         # Use original censoring distribution from the dataset. Assumes cond. indep censoring
         df_all_copy = df_all.copy()  # Make a copy to avoid changing the original dataset
         df_all_copy.event = 1 - df_all_copy.event
-        cph = CoxPHSurvivalAnalysis(alpha=0.0001)
         X = df_all_copy.drop(['event', 'time'], axis=1)
-        y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
-        cph.fit(X, y)
-        censor_curves = cph.predict_survival_function(df_event.drop(['event', 'time'], axis=1))
-        censor_curves = pd.DataFrame(np.row_stack([fn(cph.unique_times_) for fn in censor_curves]), columns=cph.unique_times_)
-        uniq_times = cph.unique_times_
+        y_cens = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
+        cph_cens = CoxPHSurvivalAnalysis(alpha=0.0001)
+        cph_cens.fit(X, y_cens)
+        censor_curves = cph_cens.predict_survival_function(df_event.drop(['event', 'time'], axis=1))
+        censor_curves = pd.DataFrame(np.row_stack([fn(cph_cens.unique_times_) for fn in censor_curves]), columns=cph_cens.unique_times_)
+        uniq_times = cph_cens.unique_times_
         censor_cdf = 1 - censor_curves.values
         censor_pdf = calculate_pdf(censor_cdf)
         censor_times = np.zeros(censor_pdf.shape[0])
@@ -64,70 +65,92 @@ def make_synthetic_censoring(strategy: str,
             censor_times[i] = uniq_times[np.argmax(censor_pdf[i,:])] # use the max prob
         selected_features = df_all_copy.drop(columns=['time', 'event']).columns
     elif strategy == "top_5":
+        # Find top 5 features using feature importances
+        df_all_copy = df_all.copy()
+        X = df_all_copy.drop(['event', 'time'], axis=1)
+        y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
+        cph_features = CoxPHSurvivalAnalysis(alpha=0.0001)
+        cph_features.fit(X, y)
+        result = permutation_importance(cph_features, X, y, random_state=0)
+        importances_perm = result.importances_mean
+        feature_importance_df = pd.DataFrame({"Feature": X.columns, "Importance": importances_perm})
+        top_5_fts = feature_importance_df.sort_values(by="Importance", ascending=False).head(5)['Feature']
+       
+        # Train CPH model on censoring dist
         df_all_copy = df_all.copy()
         df_all_copy.event = 1 - df_all_copy.event
         X = df_all_copy[df_all_copy.columns].drop(['time', 'event'], axis=1)
-        y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
-        gbsa = GradientBoostingSurvivalAnalysis(max_depth=1, random_state=0)
-        gbsa.fit(X, y)
-        importances = gbsa.feature_importances_
-        feature_importances = pd.DataFrame({'Feature': X.columns, 'Importance': importances})
-        top_5_fts = list(feature_importances.sort_values(by='Importance', ascending=False)[:5]['Feature'])
-        cph = CoxPHSurvivalAnalysis(alpha=0.0001)
-        X = df_all_copy.drop(['event', 'time'], axis=1)
-        y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
-        cph.fit(X, y)
-        censor_curves = cph.predict_survival_function(df_event.drop(['event', 'time'], axis=1))
-        censor_curves = pd.DataFrame(np.row_stack([fn(cph.unique_times_) for fn in censor_curves]), columns=cph.unique_times_)
-        uniq_times = cph.unique_times_
+        y_cens = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
+        cph_cens = CoxPHSurvivalAnalysis(alpha=0.0001)
+        cph_cens.fit(X, y_cens)
+        
+        # Predict the censoring
+        censor_curves = cph_cens.predict_survival_function(df_event.drop(['event', 'time'], axis=1))
+        censor_curves = pd.DataFrame(np.row_stack([fn(cph_cens.unique_times_) for fn in censor_curves]), columns=cph_cens.unique_times_)
+        uniq_times = cph_cens.unique_times_
         censor_cdf = 1 - censor_curves.values
         censor_pdf = calculate_pdf(censor_cdf)
         censor_times = np.empty(censor_pdf.shape[0])
         for i in range(censor_pdf.shape[0]):
             censor_times[i] = uniq_times[np.argmax(censor_pdf[i, :])] # use the max prob
+            
         selected_features = top_5_fts
     elif strategy == "top_10":
+        # Find top 10 features
+        df_all_copy = df_all.copy()
+        X = df_all_copy.drop(['event', 'time'], axis=1)
+        y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
+        cph_features = CoxPHSurvivalAnalysis(alpha=0.0001)
+        cph_features.fit(X, y)
+        result = permutation_importance(cph_features, X, y, random_state=0)
+        importances_perm = result.importances_mean
+        feature_importance_df = pd.DataFrame({"Feature": X.columns, "Importance": importances_perm})
+        top_10_fts = feature_importance_df.sort_values(by="Importance", ascending=False).head(10)['Feature']
+        
+        # Train CPH model on censoring dist
         df_all_copy = df_all.copy()
         df_all_copy.event = 1 - df_all_copy.event
         X = df_all_copy[df_all_copy.columns].drop(['time', 'event'], axis=1)
-        y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
-        gbsa = GradientBoostingSurvivalAnalysis(max_depth=1, random_state=0)
-        gbsa.fit(X, y)
-        importances = gbsa.feature_importances_
-        feature_importances = pd.DataFrame({'Feature': X.columns, 'Importance': importances})
-        top_10_fts = list(feature_importances.sort_values(by='Importance', ascending=False)[:10]['Feature'])
-        cph = CoxPHSurvivalAnalysis(alpha=0.0001)
-        X = df_all_copy.drop(['event', 'time'], axis=1)
-        y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
-        cph.fit(X, y)
-        censor_curves = cph.predict_survival_function(df_event.drop(['event', 'time'], axis=1))
-        censor_curves = pd.DataFrame(np.row_stack([fn(cph.unique_times_) for fn in censor_curves]), columns=cph.unique_times_)
-        uniq_times = cph.unique_times_
+        y_cens = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
+        cph_cens = CoxPHSurvivalAnalysis(alpha=0.0001)
+        cph_cens.fit(X, y_cens)
+        
+        # Predict the censoring
+        censor_curves = cph_cens.predict_survival_function(df_event.drop(['event', 'time'], axis=1))
+        censor_curves = pd.DataFrame(np.row_stack([fn(cph_cens.unique_times_) for fn in censor_curves]), columns=cph_cens.unique_times_)
+        uniq_times = cph_cens.unique_times_
         censor_cdf = 1 - censor_curves.values
         censor_pdf = calculate_pdf(censor_cdf)
         censor_times = np.empty(censor_pdf.shape[0])
         for i in range(censor_pdf.shape[0]):
             censor_times[i] = uniq_times[np.argmax(censor_pdf[i, :])] # use the max prob
+            
         selected_features = top_10_fts
     elif strategy == "random_25":
         # Keep random 25% of the features
         df_all_copy = df_all.copy()  # Make a copy to avoid changing the original dataset
-        df_all_copy.event = 1 - df_all_copy.event
         all_features = df_all_copy.drop(columns=['time', 'event']).columns # Exclude time and event columns
-        random_25 = np.random.choice(all_features, size=int(len(all_features) * 0.25), replace=False) # Random selection
-        cph = CoxPHSurvivalAnalysis(alpha=0.0001)
-        X = df_all_copy.drop(['event', 'time'], axis=1)
-        y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
-        cph.fit(X, y)
-        censor_curves = cph.predict_survival_function(df_event.drop(['event', 'time'], axis=1))
-        censor_curves = pd.DataFrame(np.row_stack([fn(cph.unique_times_) for fn in censor_curves]), columns=cph.unique_times_)
-        uniq_times = cph.unique_times_
+        random_25_fts = np.random.choice(all_features, size=int(len(all_features) * 0.25), replace=False)
+        
+        # Train CPH model on censoring dist
+        df_all_copy = df_all.copy()
+        df_all_copy.event = 1 - df_all_copy.event
+        X = df_all_copy[df_all_copy.columns].drop(['time', 'event'], axis=1)
+        y_cens = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
+        cph_cens = CoxPHSurvivalAnalysis(alpha=0.0001)
+        cph_cens.fit(X, y_cens)
+        
+        # Predict the censoring
+        censor_curves = cph_cens.predict_survival_function(df_event.drop(['event', 'time'], axis=1))
+        censor_curves = pd.DataFrame(np.row_stack([fn(cph_cens.unique_times_) for fn in censor_curves]), columns=cph_cens.unique_times_)
+        uniq_times = cph_cens.unique_times_
         censor_cdf = 1 - censor_curves.values
         censor_pdf = calculate_pdf(censor_cdf)
         censor_times = np.empty(censor_pdf.shape[0])
         for i in range(censor_pdf.shape[0]):
             censor_times[i] = uniq_times[np.argmax(censor_pdf[i, :])] # use the max prob
-        selected_features = list(random_25)
+        
+        selected_features = random_25_fts
     else:
         raise NotImplementedError()    
     
