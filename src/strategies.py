@@ -71,7 +71,8 @@ def make_synthetic_censoring(strategy: str,
         y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
         cph_features = CoxPHSurvivalAnalysis(alpha=0.0001)
         cph_features.fit(X, y)
-        result = permutation_importance(cph_features, X, y, random_state=0)
+        result = permutation_importance(cph_features, X, y, n_jobs=-1,
+                                        max_samples=0.25, random_state=0)
         importances_perm = result.importances_mean
         feature_importance_df = pd.DataFrame({"Feature": X.columns, "Importance": importances_perm})
         top_5_fts = feature_importance_df.sort_values(by="Importance", ascending=False).head(5)['Feature']
@@ -102,7 +103,8 @@ def make_synthetic_censoring(strategy: str,
         y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
         cph_features = CoxPHSurvivalAnalysis(alpha=0.0001)
         cph_features.fit(X, y)
-        result = permutation_importance(cph_features, X, y, random_state=0)
+        result = permutation_importance(cph_features, X, y, n_jobs=-1,
+                                        max_samples=0.25, random_state=0)
         importances_perm = result.importances_mean
         feature_importance_df = pd.DataFrame({"Feature": X.columns, "Importance": importances_perm})
         top_10_fts = feature_importance_df.sort_values(by="Importance", ascending=False).head(10)['Feature']
