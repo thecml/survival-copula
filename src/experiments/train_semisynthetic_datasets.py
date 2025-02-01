@@ -266,7 +266,7 @@ if __name__ == "__main__":
         model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
         
         # Save results
-        filename = f"{cfg.RESULTS_DIR}/dependent_error.csv"
+        filename = f"{cfg.RESULTS_DIR}/semisynthetic_results.csv"
         if os.path.exists(filename):
             results = pd.read_csv(filename)
         else:

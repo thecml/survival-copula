@@ -8,12 +8,12 @@ if [[ -z "$base_path" ]] ; then  # error; for some reason, the path is not acces
 fi
 echo "$base_path"
 
-results_path=$base_path/../results/dependent.csv
+results_path=$base_path/../results/semisynthetic_results.csv
 if [ -f "$results_path" ]; then
   rm $results_path
 fi
 
-seeds=(0)
+seeds=(0 1 2 3 4 5 6 7 8 9)
 dataset_names=("metabric" "mimic_all" "mimic_hospital" "seer_brain" "seer_breast" "seer_liver" "seer_stomach" "seer_prostate")
 strategies=('original' 'top_5' 'top_10' 'random_25')
 
