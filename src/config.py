@@ -12,7 +12,7 @@ COXPH_PARAMS = {
     'tol': 1e-9
 }
 
-COXBOOST_PARAMS = {
+GBSA_PARAMS = {
     'n_estimators': 100,
     'learning_rate': 0.1,
     'max_depth': 1,

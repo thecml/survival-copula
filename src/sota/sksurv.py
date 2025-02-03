@@ -11,7 +11,7 @@ def make_cox_model(config):
     model = CoxPHSurvivalAnalysis(alpha=0.0001)
     return model
 
-def make_coxboost_model(config):
+def make_gbsa_model(config):
     n_estimators = config['n_estimators']
     learning_rate = config['learning_rate']
     max_depth = config['max_depth']
