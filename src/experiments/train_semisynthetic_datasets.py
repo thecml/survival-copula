@@ -26,6 +26,8 @@ from sksurv.linear_model import CoxPHSurvivalAnalysis
 from sksurv.ensemble import GradientBoostingSurvivalAnalysis, RandomSurvivalForest
 from sksurv.metrics import concordance_index_ipcw
 
+import time
+
 np.random.seed(0)
 torch.manual_seed(0)
 random.seed(0)
@@ -41,7 +43,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--dataset_name', type=str, default='metabric')
+    parser.add_argument('--dataset_name', type=str, default='mimic_all')
     parser.add_argument('--strategy', type=str, default='original')
     
     args = parser.parse_args()
@@ -127,8 +129,8 @@ if __name__ == "__main__":
             copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
         dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
                                                                           valid_dict, copula=copula, n_epochs=100000,
-                                                                          patience=100, lr=0.001, batch_size=n_samples,
-                                                                          copula_name=copula_name, verbose=False)
+                                                                          patience=100, lr=0.001, batch_size=1024,
+                                                                          copula_name=copula_name, verbose=True)
         copula_theta = float(copula.parameters()[0][0])
         k = sum(param.numel() for param in dep_model1.parameters())
         k += sum(param.numel() for param in dep_model2.parameters())
@@ -151,13 +153,16 @@ if __name__ == "__main__":
         # No dependence found, assume independent copula
         best_copula_name = "clayton"
         best_copula_theta = 0.001
-    
+
     for model_name in MODELS:
         # Reset seeds
         np.random.seed(0)
         torch.manual_seed(0)
         torch.cuda.manual_seed_all(0)
         random.seed(0)
+        
+        print(f"Started training model {model_name}")
+        start_time = time.time()
         
         # Train base learners
         if model_name == "coxph":
@@ -198,6 +203,11 @@ if __name__ == "__main__":
                                      reset_model=True, device=device)
         else:
             raise NotImplementedError()
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        end_time = time.time()
+        
+        print(f"Training time for model {model_name}: {elapsed_time:.2f} seconds")
         
         # Compute survival function
         if model_name in ["coxph", "gbsa", "rsf"]:
@@ -248,8 +258,8 @@ if __name__ == "__main__":
 
         # Calculate dependent metrics
         dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                           data_train.time.values, data_train.event.values, copula_name=copula_name,
-                                           alpha=copula_theta)
+                                           data_train.time.values, data_train.event.values, copula_name=best_copula_name,
+                                           alpha=best_copula_theta)
         ci_dep_ipcw = dep_evaluator.concordance(method="IPCW")[0]
         ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
         ibs_dep_ipcw = dep_evaluator.integrated_brier_score(method="IPCW", num_points=10)

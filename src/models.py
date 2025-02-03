@@ -202,52 +202,6 @@ class Weibull_linear:
     def rvs(self, x, u):
         return ((-LOG(u)/torch.exp(torch.matmul(x, self.coeff)))**(1/self.gamma))*self.alpha
 
-class Weibull_nonlinear:
-    def __init__(self, n_features, n_hidden, risk_function=torch.nn.ReLU(),
-                 device='cpu', dtype=torch.float64):
-        self.alpha = torch.rand((n_hidden,), device=device).type(dtype)
-        self.gamma = torch.rand((n_hidden,), device=device).type(dtype)
-        self.beta = torch.rand((n_features, n_hidden), device=device).type(dtype)
-        self.hidden_layer = risk_function
-        
-    def PDF(self ,t ,x):
-        return self.hazard(t, x) * self.survival(t, x)
-    
-    def CDF(self ,t ,x):    
-        return 1 - self.survival(t, x)
-    
-    def survival(self ,t ,x):   
-        return torch.exp(-self.cum_hazard(t, x))
-    
-    def hazard(self, t, x):
-        shape, scale = self.pred_params(x)
-        return shape/scale * (t/scale)**(shape-1)
-
-    def cum_hazard(self, t, x):
-        shape, scale = self.pred_params(x)
-        return (t/scale)**shape
-
-    def parameters(self):
-        return [self.alpha, self.gamma, self.beta]
-
-    def pred_params(self, x):
-        hidden = self.hidden_layer(torch.matmul(x, self.beta))
-        shape = torch.matmul(hidden, self.alpha)
-        scale = torch.matmul(hidden, self.gamma)
-        return shape, scale
-    
-    def enable_grad(self):
-        self.alpha.requires_grad = True
-        self.gamma.requires_grad = True
-        self.beta.requires_grad = True
-
-    def parameters(self):
-        return [self.alpha, self.gamma, self.beta]
-    
-    def rvs(self, x, u):
-        shape, scale = self.pred_params(x)
-        return scale * ((-LOG(u))**(1/shape))
-    
 class Weibull_log_linear:
     def __init__(self, n_features, device="cpu", dtype=torch.float64) -> None:
         self.mu = torch.rand(1, device=device).type(dtype)
