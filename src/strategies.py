@@ -7,8 +7,11 @@ from sksurv.ensemble import GradientBoostingSurvivalAnalysis
 from sksurv.linear_model import CoxPHSurvivalAnalysis
 from sksurv.util import Surv
 from sklearn.inspection import permutation_importance
+import config as cfg
 
 from misc.plot_km_curves import compare_km_curves
+from sota.sksurv import make_cox_model
+from utility.data import dotdict
 from utility.survival import convert_to_structured
 
 def combine_data_with_censor(
@@ -53,6 +56,8 @@ def make_synthetic_censoring(strategy: str,
         df_all_copy.event = 1 - df_all_copy.event
         X = df_all_copy.drop(['event', 'time'], axis=1)
         y_cens = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
+        config = dotdict(cfg.COXPH_PARAMS)
+        cph_cens = make_cox_model(config)
         cph_cens = CoxPHSurvivalAnalysis(alpha=0.0001)
         cph_cens.fit(X, y_cens)
         censor_curves = cph_cens.predict_survival_function(df_event.drop(['event', 'time'], axis=1))
@@ -69,7 +74,8 @@ def make_synthetic_censoring(strategy: str,
         df_all_copy = df_all.copy()
         X = df_all_copy.drop(['event', 'time'], axis=1)
         y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
-        cph_features = CoxPHSurvivalAnalysis(alpha=0.0001)
+        config = dotdict(cfg.COXPH_PARAMS)
+        cph_features = make_cox_model(config)
         cph_features.fit(X, y)
         result = permutation_importance(cph_features, X, y, n_jobs=-1,
                                         max_samples=0.25, random_state=0)
@@ -82,7 +88,8 @@ def make_synthetic_censoring(strategy: str,
         df_all_copy.event = 1 - df_all_copy.event
         X = df_all_copy[df_all_copy.columns].drop(['time', 'event'], axis=1)
         y_cens = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
-        cph_cens = CoxPHSurvivalAnalysis(alpha=0.0001)
+        config = dotdict(cfg.COXPH_PARAMS)
+        cph_cens = make_cox_model(config)
         cph_cens.fit(X, y_cens)
         
         # Predict the censoring
@@ -101,7 +108,8 @@ def make_synthetic_censoring(strategy: str,
         df_all_copy = df_all.copy()
         X = df_all_copy.drop(['event', 'time'], axis=1)
         y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
-        cph_features = CoxPHSurvivalAnalysis(alpha=0.0001)
+        config = dotdict(cfg.COXPH_PARAMS)
+        cph_features = make_cox_model(config)
         cph_features.fit(X, y)
         result = permutation_importance(cph_features, X, y, n_jobs=-1,
                                         max_samples=0.25, random_state=0)
@@ -114,7 +122,8 @@ def make_synthetic_censoring(strategy: str,
         df_all_copy.event = 1 - df_all_copy.event
         X = df_all_copy[df_all_copy.columns].drop(['time', 'event'], axis=1)
         y_cens = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
-        cph_cens = CoxPHSurvivalAnalysis(alpha=0.0001)
+        config = dotdict(cfg.COXPH_PARAMS)
+        cph_cens = make_cox_model(config)
         cph_cens.fit(X, y_cens)
         
         # Predict the censoring
@@ -139,7 +148,8 @@ def make_synthetic_censoring(strategy: str,
         df_all_copy.event = 1 - df_all_copy.event
         X = df_all_copy[df_all_copy.columns].drop(['time', 'event'], axis=1)
         y_cens = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
-        cph_cens = CoxPHSurvivalAnalysis(alpha=0.0001)
+        config = dotdict(cfg.COXPH_PARAMS)
+        cph_cens = make_cox_model(config)
         cph_cens.fit(X, y_cens)
         
         # Predict the censoring

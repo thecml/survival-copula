@@ -11,6 +11,8 @@ from SurvivalEVAL.Evaluations.util import predict_median_survival_time
 from scipy.interpolate import interp1d
 
 from metrics import DependentEvaluator
+from sota.sksurv import make_cox_model
+from utility.data import dotdict
 from utility.survival import (convert_to_structured, kendall_tau_to_theta,
                               make_stratified_split, make_time_bins)
 
@@ -84,7 +86,8 @@ if __name__ == "__main__":
                     time_bins = torch.cat((torch.tensor([0]).to(device), time_bins)).cpu().numpy()
             
                     # Train Cox model
-                    model = CoxPHSurvivalAnalysis(alpha=0.0001)
+                    config = dotdict(cfg.COXPH_PARAMS)
+                    model = make_cox_model(config)
                     model.fit(X_train, y_train)
                     survival_outputs = model.predict_survival_function(X_test)
                     survival_outputs = np.row_stack([fn(model.unique_times_) for fn in survival_outputs])

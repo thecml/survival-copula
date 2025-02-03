@@ -10,6 +10,7 @@ import config as cfg
 from metrics import DependentEvaluator
 from sota.deepsurv import DeepSurv, make_deepsurv_prediction, train_deepsurv_model
 from sota.mtlr import make_mtlr_prediction, mtlr, train_mtlr_model
+from sota.sksurv import make_cox_model, make_coxboost_model, make_rsf_model
 from utility.data import dotdict, fix_types
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.util import predict_median_survival_time
@@ -160,13 +161,16 @@ if __name__ == "__main__":
         
         # Train base learners
         if model_name == "coxph":
-            model = CoxPHSurvivalAnalysis(alpha=0.0001)
+            config = dotdict(cfg.COXPH_PARAMS)
+            model = make_cox_model(config)
             model.fit(X_train, y_train)
-        elif model_name == "gbsa":
-            model = GradientBoostingSurvivalAnalysis(random_state=0)
+        elif model_name == "coxboost":
+            config = dotdict(cfg.COXBOOST_PARAMS)
+            model = make_coxboost_model(config)
             model.fit(X_train, y_train)
         elif model_name == "rsf":
-            model = RandomSurvivalForest(random_state=0)
+            config = dotdict(cfg.RSF_PARAMS)
+            model = make_rsf_model(config)
             model.fit(X_train, y_train)
         elif model_name == "deepsurv":
             config = dotdict(cfg.DEEPSURV_PARAMS)
