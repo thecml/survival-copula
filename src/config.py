@@ -20,7 +20,6 @@ GBSA_PARAMS = {
     'min_samples_split': 10,
     'min_samples_leaf': 5,
     'max_features': 'sqrt',
-    'dropout_rate': 0.0,
     'subsample': 0.8,
     'seed': 0,
     'test_size': 0.3,

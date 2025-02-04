@@ -46,7 +46,7 @@ def calculate_errors(results, dataset, strategy, model_names, metrics):
     return mean_errors, std_errors
 
 if __name__ == "__main__":
-    results = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "dependent.csv"))
+    results = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "semisynthetic_results.csv"))
     metrics = ["CIHarrell", "CIUno", "CIDepIPCW", "IBSIPCW", "IBSDepBG",
                "MAEUncens", "MAEHinge", "MAEMargin" ,"MAEPseudo", "MAEDepBG"]
     
@@ -54,8 +54,8 @@ if __name__ == "__main__":
     cols_to_scale = ["CITrue", "CIHarrell", "CIUno", "CIDepIPCW", "IBSTrue", "IBSIPCW", "IBSDepBG"]
     results[cols_to_scale] = results[cols_to_scale] * 100
 
-    datasets = ["gbsg", "metabric", "mimic", "nacd", "support",
-                "seer_brain", "seer_breast", "seer_liver", "seer_prostate", "seer_stomach"]
+    #dataset_names=("metabric" "mimic_all" "mimic_hospital" "seer_brain" "seer_liver" "seer_stomach")
+    datasets = ["metabric", "mimic_all", "mimic_hospital"]
     strategies = ["original", "top_5", "top_10", "random_25"]
     model_names = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 

@@ -249,6 +249,7 @@ class Weibull_nonlinear(nn.Module):
         # Nonlinear neural network for covariate transformation
         self.net = nn.Sequential(
             nn.Linear(n_features, hidden_units, device=device, dtype=dtype),
+            nn.BatchNorm1d(hidden_units).to(device),
             nn.ReLU(),
             nn.Linear(hidden_units, 1, device=device, dtype=dtype)
         )

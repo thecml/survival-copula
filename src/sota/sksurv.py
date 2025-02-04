@@ -19,7 +19,6 @@ def make_gbsa_model(config):
     min_samples_split = config['min_samples_split']
     min_samples_leaf = config['min_samples_leaf']
     max_features = config['max_features']
-    dropout_rate = config['dropout_rate']
     subsample = config['subsample']
     model = GradientBoostingSurvivalAnalysis(n_estimators=n_estimators,
                                             learning_rate=learning_rate,
@@ -28,7 +27,6 @@ def make_gbsa_model(config):
                                             min_samples_split=min_samples_split,
                                             min_samples_leaf=min_samples_leaf,
                                             max_features=max_features,
-                                            dropout_rate=dropout_rate,
                                             subsample=subsample,
                                             random_state=0)
     return model
