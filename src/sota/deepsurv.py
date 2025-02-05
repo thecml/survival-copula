@@ -75,8 +75,8 @@ def train_deepsurv_model(
         print(f"Training {model.get_name()}: reset mode is {reset_model}, number of epochs is {config.num_epochs}, "
               f"learning rate is {config.lr}, C1 is {config.c1}, "
               f"batch size is {config.batch_size}, device is {device}.")
-    train_size = data_train.shape[0]
-    val_size = data_valid.shape[0]
+    
+    batch_size = config.batch_size
     optimizer = optim.Adam(model.parameters(), lr=config.lr)
 
     if reset_model:
@@ -97,28 +97,64 @@ def train_deepsurv_model(
                            torch.tensor(data_valid["time"].values, dtype=dtype).to(device),
                            torch.tensor(data_valid["event"].values, dtype=dtype).to(device))
 
-    train_loader = DataLoader(TensorDataset(x_train, t_train, e_train), batch_size=train_size, shuffle=True)
-    model.config.batch_size = train_size
+    train_loader = DataLoader(TensorDataset(x_train, t_train, e_train), batch_size=batch_size, shuffle=True)
+    valid_loader = DataLoader(TensorDataset(x_val, t_val, e_val), batch_size=batch_size, shuffle=False)
+    
+    model.config.batch_size = batch_size
 
     for i in pbar:
-        nll_loss = 0
+        
+        # Training
+        total_nll_loss = 0
+        num_batches = 0
         for xi, ti, ei in train_loader:
             xi, ti, ei = xi.to(device), ti.to(device), ei.to(device)
+            
+            # Check if there is at least one event (1) in ei
+            if (ei == 1).sum() == 0:
+                continue  # Skip the batch
+    
             optimizer.zero_grad()
             y_pred = model.forward(xi)
-            nll_loss = cox_nll(y_pred, 1, 0, ti, ei, model, C1=config.c1)
+            batch_loss = cox_nll(y_pred, 1, 0, ti, ei, model, C1=config.c1)
 
-            nll_loss.backward()
+            batch_loss.backward()
             optimizer.step()
-            # here should have only one iteration
-        logits_outputs = model.forward(x_val)
-        eval_nll = cox_nll(logits_outputs, 1, 0, t_val, e_val, model, C1=0)
+            
+            total_nll_loss += batch_loss.item()
+            num_batches += 1
+        
+        avg_nll_loss = total_nll_loss / num_batches if num_batches > 0 else float("inf")
+        
+        # Validation
+        total_val_loss = 0
+        num_val_batches = 0
+        with torch.no_grad():
+            for xi_val, ti_val, ei_val in valid_loader:
+                xi_val, ti_val, ei_val = xi_val.to(device), ti_val.to(device), ei_val.to(device)
+
+                # Check if there is at least one event (1) in ei_val
+                if (ei_val == 1).sum() == 0:
+                    continue  # Skip the batch
+
+                logits_outputs = model.forward(xi_val)
+                batch_val_loss = cox_nll(logits_outputs, 1, 0, ti_val, ei_val, model, C1=0)
+
+                total_val_loss += batch_val_loss.item()
+                num_val_batches += 1
+            
+        # Compute the average validation loss over all batches
+        avg_val_nll = total_val_loss / num_val_batches if num_val_batches > 0 else float("inf")
+
+        # Update progress bar
         pbar.set_description(f"[epoch {i + 1: 4}/{config.num_epochs}]")
-        pbar.set_postfix_str(f"nll-loss = {nll_loss.item():.4f}; "
-                                f"Validation nll = {eval_nll.item():.4f};")
+        pbar.set_postfix_str(f"nll-loss = {avg_nll_loss:.4f}; "
+                            f"Validation nll = {avg_val_nll:.4f};")
+    
+        # Early stopping logic
         if config.early_stop:
-            if best_val_nll > eval_nll:
-                best_val_nll = eval_nll
+            if best_val_nll > avg_val_nll:
+                best_val_nll = avg_val_nll
                 best_ep = i
             if (i - best_ep) > config.patience:
                 print(f"Validation loss converges at {best_ep}-th epoch.")

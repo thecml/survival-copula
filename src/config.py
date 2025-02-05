@@ -40,6 +40,7 @@ DEEPSURV_PARAMS = {
     'lr': 0.001,
     'c1': 0.01,
     'num_epochs': 1000,
+    'batch_size': 32,
     'dropout': 0.25,
     'early_stop': True,
     'patience': 10

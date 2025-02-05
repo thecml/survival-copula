@@ -37,7 +37,7 @@ torch.set_default_dtype(dtype)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-MODELS = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
+MODELS = ["deepsurv", "mtlr"]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -118,6 +118,7 @@ if __name__ == "__main__":
     time_bins = make_time_bins(train_dict['T'].cpu(), event=train_dict['E'].cpu(), dtype=dtype).to(device)
     time_bins = torch.cat((torch.tensor([0]).to(device), time_bins))
     
+    """
     # Estimate theta on the new dataset and find the best copula
     results_list = []
     for copula_name in ["clayton", "frank"]:
@@ -162,14 +163,14 @@ if __name__ == "__main__":
         best_copula_name = "clayton"
         best_copula_theta = 0.001
     
+    """
+    
     for model_name in MODELS:
         # Reset seeds
         np.random.seed(0)
         torch.manual_seed(0)
         torch.cuda.manual_seed_all(0)
         random.seed(0)
-        
-        torch.cuda.empty_cache() # empty cache
         
         print(f"Started training model {model_name}")
         start_time = time.time()
@@ -216,6 +217,8 @@ if __name__ == "__main__":
         end_time = time.time()
         elapsed_time = end_time - start_time
         end_time = time.time()
+        
+        continue
         
         print(f"Training time for model {model_name}: {elapsed_time:.2f} seconds")
         
