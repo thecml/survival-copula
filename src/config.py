@@ -17,8 +17,8 @@ GBSA_PARAMS = {
     'learning_rate': 0.1,
     'max_depth': 1,
     'loss': 'coxph',
-    'min_samples_split': 10,
-    'min_samples_leaf': 5,
+    'min_samples_split': 2,
+    'min_samples_leaf': 1,
     'max_features': 'sqrt',
     'subsample': 0.8,
     'seed': 0,
@@ -28,8 +28,8 @@ GBSA_PARAMS = {
 RSF_PARAMS = {
     'n_estimators': 100,
     'max_depth': 1,
-    'min_samples_split': 10,
-    'min_samples_leaf': 5,
+    'min_samples_split': 2,
+    'min_samples_leaf': 1,
     'max_features': 'sqrt',
     "random_state": 0
 }
