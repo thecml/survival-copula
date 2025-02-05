@@ -127,6 +127,8 @@ if __name__ == "__main__":
         torch.cuda.manual_seed_all(0)
         random.seed(0)
         
+        torch.cuda.empty_cache() # empty cache
+        
         dep_model1 = Weibull_nonlinear(n_features, dtype=dtype, device=device) # censoring model
         dep_model2 = Weibull_nonlinear(n_features, dtype=dtype, device=device) # event model
         if copula_name == "clayton":
@@ -135,7 +137,7 @@ if __name__ == "__main__":
             copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
         dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
                                                                           valid_dict, copula=copula, n_epochs=10000,
-                                                                          patience=100, lr=0.001, batch_size=1024,
+                                                                          patience=100, lr=0.001, batch_size=128,
                                                                           copula_name=copula_name, verbose=True)
         copula_theta = float(copula.parameters()[0][0])
         k = sum(param.numel() for param in dep_model1.parameters())
@@ -166,6 +168,8 @@ if __name__ == "__main__":
         torch.manual_seed(0)
         torch.cuda.manual_seed_all(0)
         random.seed(0)
+        
+        torch.cuda.empty_cache() # empty cache
         
         print(f"Started training model {model_name}")
         start_time = time.time()

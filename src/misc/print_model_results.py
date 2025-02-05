@@ -48,14 +48,16 @@ def calculate_errors(results, dataset, strategy, model_names, metrics):
 if __name__ == "__main__":
     results = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "semisynthetic_results.csv"))
     metrics = ["CIHarrell", "CIUno", "CIDepIPCW", "IBSIPCW", "IBSDepBG",
-               "MAEUncens", "MAEHinge", "MAEMargin" ,"MAEPseudo", "MAEDepBG"]
+               "MAEUncens", "MAEHinge", "MAEPseudo", "MAEMargin", "MAEDepBG"]
+    
+    # Use seed 0
+    results = results.loc[results['Seed'] == 0]
     
     # Scale metrics by percentage
     cols_to_scale = ["CITrue", "CIHarrell", "CIUno", "CIDepIPCW", "IBSTrue", "IBSIPCW", "IBSDepBG"]
     results[cols_to_scale] = results[cols_to_scale] * 100
 
-    #dataset_names=("metabric" "mimic_all" "mimic_hospital" "seer_brain" "seer_liver" "seer_stomach")
-    datasets = ["metabric", "mimic_all", "mimic_hospital"]
+    datasets = ["metabric", "mimic_all", "mimic_hospital", "seer_brain", "seer_liver", "seer_stomach"]
     strategies = ["original", "top_5", "top_10", "random_25"]
     model_names = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
