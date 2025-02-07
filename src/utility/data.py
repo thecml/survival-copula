@@ -21,12 +21,12 @@ def fix_types(df_train, df_valid, df_test):
 
 def get_dataset_info(dataset_name):
     return {
-        "metabric": (1685, "9.4"),
-        "mimic_all": (3301, "11.2"),
-        "mimic_hospital": (3301, "11.2"),
-        "seer_brain": (5624, "12.1"),
-        "seer_liver": (5557, "15.9"),
-        "seer_stomach": (5311, "16.4"),
+        "metabric": ("1,102", "3.8"),
+        "mimic_all": ("12,845", "10.6"),
+        "mimic_hospital": ("6,780", "74.3"),
+        "seer_brain": ("44,137", "9.0"),
+        "seer_liver": ("51,704", "20.5"),
+        "seer_stomach": ("56,807", "21.9"),
     }.get(dataset_name, dataset_name)
 
 def map_strategy_name(strategy):

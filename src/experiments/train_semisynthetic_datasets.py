@@ -43,7 +43,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--dataset_name', type=str, default='metabric')
+    parser.add_argument('--dataset_name', type=str, default='seer_stomach')
     parser.add_argument('--strategy', type=str, default='original')
     
     args = parser.parse_args()
@@ -137,7 +137,7 @@ if __name__ == "__main__":
             copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
         dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
                                                                           valid_dict, copula=copula, n_epochs=10000,
-                                                                          patience=100, lr=0.001, batch_size=128,
+                                                                          patience=100, lr=0.001, batch_size=1024,
                                                                           copula_name=copula_name, verbose=True)
         copula_theta = float(copula.parameters()[0][0])
         k = sum(param.numel() for param in dep_model1.parameters())
