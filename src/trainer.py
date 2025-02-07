@@ -86,9 +86,9 @@ def train_copula_model(model1, model2, train_data, val_data,
             if copula is not None:
                 with torch.no_grad():
                     if copula_name == "clayton":
-                        copula.theta.data.clamp_(-0.99, float('inf'))
+                        copula.theta.data.clamp_(-1, float('inf'))
                     else:
-                        copula.theta.data.clamp_(0.001, float('inf'))
+                        copula.theta.data.clamp_(float('-inf'), float('inf'))
 
         # Validation phase
         with torch.no_grad():
