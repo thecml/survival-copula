@@ -40,18 +40,18 @@ def calculate_errors(results, dataset, strategy, model_names, metrics):
                 std_errors[metric].append(np.std(errors))
     
     # Aggregate mean/std errors across models
-    mean_errors = {k: np.mean(v) for k, v in mean_errors.items()}
-    std_errors = {k: np.mean(v) for k, v in std_errors.items()}
+    mean_errors = {k: np.nanmean(v) for k, v in mean_errors.items()}
+    std_errors = {k: np.nanmean(v) for k, v in std_errors.items()}
 
     return mean_errors, std_errors
 
 if __name__ == "__main__":
     results = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "semisynthetic_results.csv"))
-    metrics = ["CIHarrell", "CIUno", "CIDepIPCW", "IBSIPCW", "IBSDepIPCW",
+    metrics = ["CIHarrell", "CIUno", "CIDepIPCW", "IBSIPCW", "IBSDepBG",
                "MAEUncens", "MAEHinge", "MAEPseudo", "MAEMargin", "MAEDepBG"]
     
     # Scale metrics by percentage
-    cols_to_scale = ["CITrue", "CIHarrell", "CIUno", "CIDepIPCW", "IBSTrue", "IBSIPCW", "IBSDepIPCW"]
+    cols_to_scale = ["CITrue", "CIHarrell", "CIUno", "CIDepIPCW", "IBSTrue", "IBSIPCW", "IBSDepBG"]
     results[cols_to_scale] = results[cols_to_scale] * 100
 
     datasets = ["metabric", "mimic_all", "mimic_hospital", "seer_brain", "seer_liver", "seer_stomach"]

@@ -329,7 +329,7 @@ class DependentEvaluator:
             target_times_mat = np.repeat(time_points.reshape(1, -1), repeats=len(event_times), axis=0)
             event_times_mat = np.repeat(event_times.reshape(-1, 1), repeats=len(time_points), axis=1)
             event_indicators_mat = np.repeat(event_indicators.reshape(-1, 1), repeats=len(time_points), axis=1)
-            event_indicators_mat = event_indicators_mat.astype(bool)    
+            event_indicators_mat = event_indicators_mat.astype(bool)
 
             inverse_train_event_indicators = 1 - train_event_indicators
 
