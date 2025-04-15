@@ -257,33 +257,33 @@ if __name__ == "__main__":
         risks = -1 * predicted_times
         ci_uno = concordance_index_ipcw(y_train, y_test, risks, tau=y_train['time'].max())[0]
         ibs_ipcw = censored_evaluator.integrated_brier_score(num_points=10)
-        mae_uncensored = censored_evaluator.mae(method="Uncensored")
+
         mae_hinge = censored_evaluator.mae(method="Hinge")
         mae_margin = censored_evaluator.mae(method="Margin", weighted=True)
-        mae_ipcwv1 = censored_evaluator.mae(method="IPCW-v1", weighted=True)
-        mae_ipcwv2 = censored_evaluator.mae(method="IPCW-v2", weighted=True)
         mae_pseudo = censored_evaluator.mae(method="Pseudo_obs", weighted=True)
-
+        
+        # Calculate IBS using BG KM weights
+        indep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
+                                             data_train.time.values, data_train.event.values, copula_name="clayton", alpha=0)
+        ibs_bg = indep_evaluator.integrated_brier_score(num_points=10)
+        
         # Calculate dependent metrics
         dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                            data_train.time.values, data_train.event.values, copula_name=best_copula_name,
                                            alpha=best_copula_theta)
         ci_dep_ipcw = dep_evaluator.concordance(method="IPCW")[0]
         ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
-        ibs_dep_ipcw = dep_evaluator.integrated_brier_score(method="IPCW", num_points=10)
         mae_dep_bg = dep_evaluator.mae(method="BG")
-        mae_dep_ipcw = dep_evaluator.mae(method="IPCW")
 
         # Create results
         model_results = pd.DataFrame()
         result_row = pd.Series([seed, model_name, best_copula_name, dataset_name, strategy, best_copula_theta,
-                                ci_true, ibs_true, mae_true, ci_harrell, ci_uno, ibs_ipcw, mae_uncensored, mae_hinge, mae_margin,
-                                mae_ipcwv1, mae_ipcwv2, mae_pseudo, ci_dep_ipcw, ibs_dep_bg, ibs_dep_ipcw,
-                                mae_dep_bg, mae_dep_ipcw],
+                                ci_true, ibs_true, mae_true, ci_harrell, ci_uno, ibs_ipcw, ibs_bg,
+                                mae_hinge, mae_margin, mae_pseudo, ci_dep_ipcw, ibs_dep_bg, mae_dep_bg],
                                 index=["Seed", "ModelName", "Copula", "Dataset", "Strategy", "Theta",
-                                       "CITrue", "IBSTrue", "MAETrue", "CIHarrell", "CIUno", "IBSIPCW", "MAEUncens",
-                                       "MAEHinge", "MAEMargin", "MAEIPCWV1", "MAEIPCWV2", "MAEPseudo",
-                                       "CIDepIPCW", "IBSDepBG", "IBSDepIPCW", "MAEDepBG", "MAEDepIPCW"])
+                                       "CITrue", "IBSTrue", "MAETrue", "CIHarrell", "CIUno", "IBSIPCW",
+                                       "IBSBG", "MAEHinge", "MAEMargin", "MAEPseudo", "CIDepIPCW",
+                                       "IBSDepBG", "MAEDepBG"])
         print(result_row)
         model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
         
