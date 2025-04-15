@@ -265,7 +265,7 @@ if __name__ == "__main__":
         # Calculate IBS using BG KM weights
         indep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                              data_train.time.values, data_train.event.values, copula_name="clayton", alpha=0)
-        ibs_bg = indep_evaluator.integrated_brier_score(num_points=10)
+        ibs_bg = indep_evaluator.integrated_brier_score(method="BG", num_points=10)
         
         # Calculate dependent metrics
         dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
