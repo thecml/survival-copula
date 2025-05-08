@@ -15,6 +15,9 @@ data/
 # Results
 results/
 
+# Plots
+plots/
+
 # Distribution / packaging
 .Python
 build/

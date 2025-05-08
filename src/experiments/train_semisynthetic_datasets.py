@@ -119,7 +119,7 @@ if __name__ == "__main__":
     time_bins = torch.cat((torch.tensor([0]).to(device), time_bins))
     
     # Estimate theta on the new dataset and find the best copula
-    results_list = []
+    copula_result = dict()
     for copula_name in ["clayton", "frank"]:
         # Reset seeds
         np.random.seed(0)
@@ -140,28 +140,8 @@ if __name__ == "__main__":
                                                                           patience=100, lr=0.001, batch_size=1024,
                                                                           copula_name=copula_name, verbose=True)
         copula_theta = float(copula.parameters()[0][0])
-        k = sum(param.numel() for param in dep_model1.parameters())
-        k += sum(param.numel() for param in dep_model2.parameters())
-        k += sum(param.numel() for param in copula.parameters())
-        results_list.append({'copula_name': copula_name, 'copula_theta': copula_theta,
-                             'min_val_loss': min_val_loss, 'num_params': k})
-    results_df = pd.DataFrame(results_list)
-    results_df['AIC'] = 2*results_df['num_params'] + 2*results_df['min_val_loss'] # AIC
-    
-    # Filter for copulas that capture dependence (theta > 0.001)
-    threshold = 1e-3
-    valid_copulas = results_df[(results_df['copula_theta'].abs() >= threshold) & results_df['copula_theta'].notna()]
-
-    # Select the copula with the lowest AIC among valid copulas
-    if not valid_copulas.empty:
-        best_idx = valid_copulas['AIC'].idxmin()
-        best_copula_name = valid_copulas.loc[best_idx, 'copula_name']
-        best_copula_theta = valid_copulas.loc[best_idx, 'copula_theta']
-    else:
-        # No dependence found, assume independent copula
-        best_copula_name = "clayton"
-        best_copula_theta = 0.001
-    
+        copula_result[copula_name] = copula_theta
+        
     for model_name in MODELS:
         # Reset seeds
         np.random.seed(0)
@@ -267,26 +247,41 @@ if __name__ == "__main__":
                                              data_train.time.values, data_train.event.values, copula_name="clayton", alpha=0)
         ibs_bg = indep_evaluator.integrated_brier_score(method="BG", num_points=10)
         
-        # Calculate dependent metrics
-        dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                           data_train.time.values, data_train.event.values, copula_name=best_copula_name,
-                                           alpha=best_copula_theta)
-        ci_dep_ipcw = dep_evaluator.concordance(method="IPCW")[0]
-        ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
-        mae_dep_bg = dep_evaluator.mae(method="BG")
-
         # Create results
         model_results = pd.DataFrame()
-        result_row = pd.Series([seed, model_name, best_copula_name, dataset_name, strategy, best_copula_theta,
-                                ci_true, ibs_true, mae_true, ci_harrell, ci_uno, ibs_ipcw, ibs_bg,
-                                mae_hinge, mae_margin, mae_pseudo, ci_dep_ipcw, ibs_dep_bg, mae_dep_bg],
-                                index=["Seed", "ModelName", "Copula", "Dataset", "Strategy", "Theta",
-                                       "CITrue", "IBSTrue", "MAETrue", "CIHarrell", "CIUno", "IBSIPCW",
-                                       "IBSBG", "MAEHinge", "MAEMargin", "MAEPseudo", "CIDepIPCW",
-                                       "IBSDepBG", "MAEDepBG"])
+        
+        # Calculate dependent metrics (Clayton)
+        copula_name = "clayton"
+        copula_theta = copula_result[copula_name]
+        dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
+                                           data_train.time.values, data_train.event.values, copula_name=copula_name,
+                                           alpha=copula_theta)
+        ci_dep_clayton_ipcw = dep_evaluator.concordance(method="IPCW")[0]
+        ibs_dep_clayton_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
+        mae_dep_clayton_bg = dep_evaluator.mae(method="BG")
+        
+        # Calculate dependent metrics (Frank)
+        copula_name = "frank"
+        copula_theta = copula_result[copula_name]
+        dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
+                                           data_train.time.values, data_train.event.values, copula_name=copula_name,
+                                           alpha=copula_theta)
+        ci_dep_frank_ipcw = dep_evaluator.concordance(method="IPCW")[0]
+        ibs_dep_frank_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
+        mae_dep_frank_bg = dep_evaluator.mae(method="BG")
+
+        # Create results
+        result_row = pd.Series([seed, model_name, dataset_name, strategy, ci_true, ibs_true, mae_true,
+                                ci_harrell, ci_uno, ibs_ipcw, ibs_bg, mae_hinge, mae_margin, mae_pseudo,
+                                ci_dep_clayton_ipcw, ibs_dep_clayton_bg, mae_dep_clayton_bg,
+                                ci_dep_frank_ipcw, ibs_dep_frank_bg, mae_dep_frank_bg],
+                                index=["Seed", "ModelName", "Dataset", "Strategy", "CITrue", "IBSTrue", "MAETrue",
+                                       "CIHarrell", "CIUno", "IBSIPCW", "IBSBG", "MAEHinge", "MAEMargin", "MAEPseudo",
+                                       "CIDepClaytonIPCW", "IBSDepClaytonBG", "MAEDepClaytonBG",
+                                       "CIDepFrankIPCW", "IBSDepFrankBG", "MAEDepFrankBG"])
         print(result_row)
         model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
-        
+    
         # Save results
         filename = f"{cfg.RESULTS_DIR}/semisynthetic_results.csv"
         if os.path.exists(filename):

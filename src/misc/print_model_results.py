@@ -51,8 +51,8 @@ if __name__ == "__main__":
                "MAEUncens", "MAEHinge", "MAEPseudo", "MAEMargin", "MAEDepBG"]
     
     # Scale metrics by percentage
-    cols_to_scale = ["CITrue", "CIHarrell", "CIUno", "CIDepIPCW", "IBSTrue", "IBSIPCW", "IBSDepBG"]
-    results[cols_to_scale] = results[cols_to_scale] * 100
+    #cols_to_scale = ["CITrue", "CIHarrell", "CIUno", "CIDepIPCW", "IBSTrue", "IBSIPCW", "IBSDepBG"]
+    #results[cols_to_scale] = results[cols_to_scale] * 100
 
     datasets = ["metabric", "mimic_all", "mimic_hospital", "seer_brain", "seer_liver", "seer_stomach"]
     strategies = ["original", "top_5", "top_10", "random_25"]
