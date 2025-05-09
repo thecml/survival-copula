@@ -36,7 +36,7 @@ data_cfg = {
     "n_features": 10,
 }
 
-SEEDS = list(range(0, 10))
+SEEDS = list(range(0, 100))
 COPULA_NAMES = ["clayton", "frank"]
 K_TAU = 0.5
 N_FEATURES = 10
