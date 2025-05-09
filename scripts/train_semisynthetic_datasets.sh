@@ -13,7 +13,7 @@ if [ -f "$results_path" ]; then
   rm $results_path
 fi
 
-seeds=(0 1 2 3 4 5 6 7 8 9)
+seeds=(0 1 2 3 4)
 dataset_names=("metabric" "mimic_all" "mimic_hospital" "seer_brain" "seer_liver" "seer_stomach")
 strategies=('original' 'top_5' 'top_10' 'random_25')
 

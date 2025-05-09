@@ -138,7 +138,7 @@ if __name__ == "__main__":
         dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
                                                                           valid_dict, copula=copula, n_epochs=10000,
                                                                           patience=100, lr=0.001, batch_size=1024,
-                                                                          copula_name=copula_name, verbose=True)
+                                                                          copula_name=copula_name, verbose=False)
         copula_theta = float(copula.parameters()[0][0])
         copula_result[copula_name] = copula_theta
         
@@ -279,7 +279,6 @@ if __name__ == "__main__":
                                        "CIHarrell", "CIUno", "IBSIPCW", "IBSBG", "MAEHinge", "MAEMargin", "MAEPseudo",
                                        "CIDepClaytonIPCW", "IBSDepClaytonBG", "MAEDepClaytonBG",
                                        "CIDepFrankIPCW", "IBSDepFrankBG", "MAEDepFrankBG"])
-        print(result_row)
         model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
     
         # Save results
