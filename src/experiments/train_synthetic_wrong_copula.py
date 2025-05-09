@@ -118,7 +118,8 @@ if __name__ == "__main__":
                     
                     # Calculate dependent metrics
                     wrong_name = "clayton" if copula_name == "frank" else "frank"
-                    theta = kendall_tau_to_theta(wrong_name, k_tau)
+                    wrong_k_tau = 0.8 - k_tau  # reversed tau
+                    theta = kendall_tau_to_theta(wrong_name, wrong_k_tau)
                     dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                                        data_train.time.values, data_train.event.values, copula_name=wrong_name,
                                                        alpha=theta)
