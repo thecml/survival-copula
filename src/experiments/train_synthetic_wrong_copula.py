@@ -117,12 +117,11 @@ if __name__ == "__main__":
                     mae_margin = censored_evaluator.mae(method="Margin", weighted=True)
                     
                     # Calculate dependent metrics
-                    wrong_name = "clayton" if copula_name == "frank" else "frank"
-                    wrong_k_tau = 0.8 - k_tau  # reversed tau
-                    theta = kendall_tau_to_theta(wrong_name, wrong_k_tau)
+                    wrong_k_tau = 0.8 - k_tau  # reverse tau
+                    wrong_theta = kendall_tau_to_theta(copula_name, wrong_k_tau)
                     dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                                       data_train.time.values, data_train.event.values, copula_name=wrong_name,
-                                                       alpha=theta)
+                                                       data_train.time.values, data_train.event.values, copula_name=copula_name,
+                                                       alpha=wrong_theta)
                     ci_dep_ipcw = dep_evaluator.concordance(method="IPCW")[0]
                     ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
                     ibs_dep_ipcw = dep_evaluator.integrated_brier_score(method="IPCW", num_points=10)
