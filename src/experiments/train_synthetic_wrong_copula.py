@@ -42,6 +42,9 @@ K_TAU = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
 DATA = [(10000, 10)]
 LINEAR = True
 
+# Select family, family_dep, dep
+TYPE = "family"
+
 if __name__ == "__main__":
     results_dict = {}
     for seed in SEEDS:
@@ -117,11 +120,19 @@ if __name__ == "__main__":
                     mae_margin = censored_evaluator.mae(method="Margin", weighted=True)
                     
                     # Calculate dependent metrics
-                    wrong_k_tau = 0.8 - k_tau  # reverse tau
-                    wrong_theta = kendall_tau_to_theta(copula_name, wrong_k_tau)
+                    if TYPE == "family":
+                        new_copula_name = "clayton" if copula_name == "frank" else "frank"
+                        new_k_tau = k_tau
+                    elif TYPE == "family_dep":
+                        new_copula_name = "clayton" if copula_name == "frank" else "frank"
+                        new_k_tau = 0.8 - k_tau
+                    elif TYPE == "dep":
+                        new_k_tau = 0.8 - k_tau
+                        
+                    theta = kendall_tau_to_theta(new_copula_name, new_k_tau)
                     dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                                       data_train.time.values, data_train.event.values, copula_name=copula_name,
-                                                       alpha=wrong_theta)
+                                                       data_train.time.values, data_train.event.values, copula_name=new_copula_name,
+                                                       alpha=theta)
                     ci_dep_ipcw = dep_evaluator.concordance(method="IPCW")[0]
                     ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
                     ibs_dep_ipcw = dep_evaluator.integrated_brier_score(method="IPCW", num_points=10)
@@ -167,7 +178,7 @@ if __name__ == "__main__":
     results_df = pd.DataFrame(flattened_results)
 
     # Save results to a CSV file
-    filename = f"{cfg.RESULTS_DIR}/synthetic_results_wrong_copula.csv"
+    filename = f"{cfg.RESULTS_DIR}/synthetic_results_wrong_copula_{TYPE.lower()}.csv"
     results_df.to_csv(filename, index=False)
 
         
