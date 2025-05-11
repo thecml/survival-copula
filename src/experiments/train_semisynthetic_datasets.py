@@ -133,8 +133,8 @@ if __name__ == "__main__":
         
         torch.cuda.empty_cache() # empty cache
         
-        dep_model1 = Weibull_nonlinear(n_features, dtype=dtype, device=device) # censoring model
-        dep_model2 = Weibull_nonlinear(n_features, dtype=dtype, device=device) # event model
+        dep_model1 = Weibull_nonlinear(n_features, dtype=dtype, device=device)
+        dep_model2 = Weibull_nonlinear(n_features, dtype=dtype, device=device)
         
         if copula_name == "clayton":
             copula = Clayton_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
