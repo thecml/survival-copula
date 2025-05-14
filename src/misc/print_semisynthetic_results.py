@@ -5,6 +5,7 @@ import config as cfg
 from utility.data import get_dataset_info, map_dataset_name, map_strategy_name
 
 N_DECIMALS = 2
+SIGMA_LEVEL = 2
                 
 def calculate_errors(results, dataset, strategy, model_names, metrics):
     true_metrics = {f"{metric}True": metric for metric in ["CI", "IBS", "MAE"]}
@@ -37,7 +38,7 @@ def calculate_errors(results, dataset, strategy, model_names, metrics):
                 true_values_for_metric = true_values[true_metric_key]
                 errors = abs(true_values_for_metric - predicted_values)
                 mean_errors[metric].append(np.mean(errors))
-                std_errors[metric].append(np.std(errors))
+                std_errors[metric].append(SIGMA_LEVEL * np.std(errors))
     
     # Aggregate mean/std errors across models
     mean_errors = {k: np.nanmean(v) for k, v in mean_errors.items()}
@@ -51,15 +52,14 @@ if __name__ == "__main__":
     # Clayton or Frank copula
     # CI: CIHarrell, CIUno, CIDepIPCW
     # IBS/MAE: IBSIPCW, IBSBG, IBSDepBG, MAEHinge, MAEPseudo, MAEMargin, MAEDepBG
-    metrics = ["CIHarrell", "CIUno", "CIDepIPCW"]
+    metrics = ["MAEHinge", "MAEPseudo", "MAEMargin", "MAEDepBG"]
     
     # Scale metrics by percentage
-    cols_to_scale = ["CITrue"] + metrics
-    results[cols_to_scale] = results[cols_to_scale] * 100
+    #cols_to_scale = ["CITrue"] + metrics
+    #results[cols_to_scale] = results[cols_to_scale] * 100
 
-    #datasets = ["metabric", "mimic_all", "mimic_hospital", "seer_brain", "seer_liver", "seer_stomach"]
-    datasets = ["metabric"]
-    strategies = ["original"] #, "top_5", "top_10", "random_25"
+    datasets = ["metabric", "mimic_all", "mimic_hospital", "seer_brain", "seer_liver", "seer_stomach"]
+    strategies = ["original", "top_5", "top_10", "random_25"]
     model_names = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
 for idx, dataset in enumerate(datasets):
