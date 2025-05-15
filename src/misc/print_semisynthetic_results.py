@@ -56,11 +56,8 @@ if __name__ == "__main__":
     #metrics = ["CIHarrell", "CIUno", "CIDepIPCW"]
     metrics = ["IBSIPCW", "IBSBG", "IBSDepBG", "MAEHinge", "MAEPseudo", "MAEMargin", "MAEDepBG"]
     
-    # Scale metrics by percentage
-    #cols_to_scale = ["CITrue"] + metrics
-    #results[cols_to_scale] = results[cols_to_scale] * 100
-
     datasets = ["metabric", "mimic_all", "seer_liver"]
+    #datasets = ["metabric", "mimic_all", "mimic_hospital", "seer_brain", "seer_liver", "seer_stomach"]
     strategies = ["original", "top_5", "top_10", "random_25"]
     model_names = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
