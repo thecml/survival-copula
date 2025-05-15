@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 import config as cfg
 from utility.data import get_dataset_info, map_dataset_name, map_strategy_name
+from utility.survival import theta_to_kendall_tau
 
 N_DECIMALS = 2
 SIGMA_LEVEL = 2
@@ -67,6 +68,11 @@ for idx, dataset in enumerate(datasets):
     print(r"\multirow{4}{*}{\makecell{" + f"{map_dataset_name(dataset)} \\\ ($N$={n_samples}, $C$={censoring_rate}\%)" + r"}}")
     for strategy in strategies:
         mean_errors, std_errors = calculate_errors(results, dataset, strategy, model_names, metrics)
+        
+        data = results.loc[(results['Dataset'] == dataset) & (results['Strategy'] == strategy)]
+        most_common_copula = data['BestCopulaName'].mode()[0]
+        mean_theta = data[data['BestCopulaName'] == most_common_copula]['BestCopulaTheta'].mean()
+        k_tau = round(theta_to_kendall_tau(most_common_copula, mean_theta), 3)
 
         # Format for printing
         formatted_errors = {
@@ -79,9 +85,10 @@ for idx, dataset in enumerate(datasets):
         }
         
         # Construct the text with mean and std errors
-        text = f"& {map_strategy_name(strategy)}" + \
+        text = f"& {map_strategy_name(strategy)}" + f" & $\\overline{{\\tau}}$ = {k_tau}" + \
             "".join(f" & {formatted_errors[metric]}$\pm$\\scriptsize" + r"{" + f"{formatted_std_errors[metric]}" + r"}" for metric in mean_errors) + " \\\\"
         print(text)
+        exit()
     
     if idx != len(datasets) - 1:
         print(r"\cmidrule(lr){1-1}")
