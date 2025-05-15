@@ -5,7 +5,7 @@ import config as cfg
 from utility.data import get_dataset_info, map_dataset_name, map_strategy_name
 from utility.survival import theta_to_kendall_tau
 
-N_DECIMALS = 2
+N_DECIMALS = 3
 SIGMA_LEVEL = 2
                 
 def calculate_errors(results, dataset, strategy, model_names, metrics):
@@ -53,13 +53,14 @@ if __name__ == "__main__":
     # Clayton or Frank copula
     # CI: CIHarrell, CIUno, CIDepIPCW
     # IBS/MAE: IBSIPCW, IBSBG, IBSDepBG, MAEHinge, MAEPseudo, MAEMargin, MAEDepBG
-    metrics = ["MAEHinge", "MAEPseudo", "MAEMargin", "MAEDepBG"]
+    #metrics = ["CIHarrell", "CIUno", "CIDepIPCW"]
+    metrics = ["IBSIPCW", "IBSBG", "IBSDepBG", "MAEHinge", "MAEPseudo", "MAEMargin", "MAEDepBG"]
     
     # Scale metrics by percentage
     #cols_to_scale = ["CITrue"] + metrics
     #results[cols_to_scale] = results[cols_to_scale] * 100
 
-    datasets = ["metabric", "mimic_all", "mimic_hospital", "seer_brain", "seer_liver", "seer_stomach"]
+    datasets = ["metabric", "mimic_all", "seer_liver"]
     strategies = ["original", "top_5", "top_10", "random_25"]
     model_names = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
@@ -72,7 +73,7 @@ for idx, dataset in enumerate(datasets):
         data = results.loc[(results['Dataset'] == dataset) & (results['Strategy'] == strategy)]
         most_common_copula = data['BestCopulaName'].mode()[0]
         mean_theta = data[data['BestCopulaName'] == most_common_copula]['BestCopulaTheta'].mean()
-        k_tau = round(theta_to_kendall_tau(most_common_copula, mean_theta), 3)
+        k_tau = round(theta_to_kendall_tau(most_common_copula, mean_theta), 2)
 
         # Format for printing
         formatted_errors = {
@@ -85,10 +86,9 @@ for idx, dataset in enumerate(datasets):
         }
         
         # Construct the text with mean and std errors
-        text = f"& {map_strategy_name(strategy)}" + f" & $\\overline{{\\tau}}$ = {k_tau}" + \
+        text = f"& {map_strategy_name(strategy)}" + \
             "".join(f" & {formatted_errors[metric]}$\pm$\\scriptsize" + r"{" + f"{formatted_std_errors[metric]}" + r"}" for metric in mean_errors) + " \\\\"
         print(text)
-        exit()
     
     if idx != len(datasets) - 1:
         print(r"\cmidrule(lr){1-1}")
