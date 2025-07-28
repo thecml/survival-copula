@@ -21,7 +21,7 @@ auc_scores = []
 
 for _ in range(100):
     # Simulate dataset
-    dl = SingleEventSyntheticDataLoader().load_data(data_cfg, k_tau=0.2, copula_name="clayton", linear=False)
+    dl = SingleEventSyntheticDataLoader().load_data(data_cfg, k_tau=0.25, copula_name="clayton", linear=True)
     df = dl.get_data()
 
     # Features and labels
