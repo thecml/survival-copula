@@ -39,10 +39,12 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 MODELS = ["coxph"]
 
-runtime_log = pd.DataFrame(columns=["Seed", "Model", "Dataset", "Strategy",
-                                    "CopulaFittingTime", "CopulaMemoryMB",
-                                    "StandardEvalTime", "StandardEvalMemoryMB",
-                                    "DepEvalTime", "DepEvalMemoryMB"])
+runtime_log = pd.DataFrame(columns=[
+    "Seed", "Model", "Dataset", "Strategy",
+    "CopulaFittingTime", "CopulaMemoryMB",
+    "HarrellCITime", "UnoCITime", "IBSTime", "MAEMarginTime",
+    "DepCITime", "DepIBSTime", "DepMAETime"
+])
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -220,7 +222,6 @@ if __name__ == "__main__":
             raise NotImplementedError()
         end_time = time.time()
         elapsed_time = end_time - start_time
-        end_time = time.time()
         
         print(f"Training time for model {model_name}: {elapsed_time:.2f} seconds")
         
@@ -260,57 +261,64 @@ if __name__ == "__main__":
         mae_true = true_evaluator.mae(method="Uncensored")
         
         # Calculate censored metrics
-        start_standard_eval = time.time()
-        standard_eval_memory_before = torch.cuda.memory_allocated(device) if torch.cuda.is_available() else 0
-        
         censored_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                                data_train.time.values, data_train.event.values)
+        predicted_times = censored_evaluator.predicted_event_times
+        
+        ci_harrell_start_time = time.time()
         ci_harrell = censored_evaluator.concordance()[0]
-        predicted_times = censored_evaluator.predict_time_from_curve(predict_median_survival_time)
+        ci_harrell_end_time = time.time()
+        ci_harrell_time = ci_harrell_end_time - ci_harrell_start_time
+        
+        ci_uno_start_time = time.time()
         risks = -1 * predicted_times
         ci_uno = concordance_index_ipcw(y_train, y_test, risks, tau=y_train['time'].max())[0]
+        ci_uno_end_time = time.time()
+        ci_uno_time = ci_uno_end_time - ci_uno_start_time
+        
+        ibs_ipcw_start_time = time.time()
         ibs_ipcw = censored_evaluator.integrated_brier_score(num_points=10)
+        ibs_ipcw_end_time = time.time()
+        ibs_ipcw_time = ibs_ipcw_end_time - ibs_ipcw_start_time        
 
-        mae_hinge = censored_evaluator.mae(method="Hinge")
+        mae_margin_start_time = time.time()
         mae_margin = censored_evaluator.mae(method="Margin", weighted=True)
-        mae_pseudo = censored_evaluator.mae(method="Pseudo_obs", weighted=True)
+        mae_margin_end_time = time.time()
+        mae_margin_time = mae_margin_end_time - mae_margin_start_time        
         
-        end_standard_eval = time.time()
-        standard_eval_memory_after = torch.cuda.memory_allocated(device) if torch.cuda.is_available() else 0
-        standard_eval_time = end_standard_eval - start_standard_eval
-        standard_eval_memory = (standard_eval_memory_after - standard_eval_memory_before) / 1024**2
-        print(f"[Standard Eval] Time: {standard_eval_time:.2f}s | Memory: {standard_eval_memory:.2f}MB")
-        
-        # Calculate IBS using BG KM weights
-        indep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                             data_train.time.values, data_train.event.values, copula_name="clayton", alpha=0)
-        ibs_bg = indep_evaluator.integrated_brier_score(method="BG", num_points=10)
-
         # Calculate dependent metrics
-        start_dep_eval = time.time()
         dep_eval_memory_before = torch.cuda.memory_allocated(device) if torch.cuda.is_available() else 0
         dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                            data_train.time.values, data_train.event.values, copula_name=best_copula_name,
                                            alpha=best_copula_theta)
+        dep_evaluator.predicted_event_times
+        
+        ci_dep_start_time = time.time()
         ci_dep_ipcw = dep_evaluator.concordance(method="IPCW")[0]
+        ci_dep_end_time = time.time()
+        ci_dep_time = ci_dep_end_time - ci_dep_start_time
+    
+        ibs_dep_start_time = time.time()
         ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
-        mae_dep_bg = dep_evaluator.mae(method="BG")
-        end_dep_eval = time.time()
-        dep_eval_memory_after = torch.cuda.memory_allocated(device) if torch.cuda.is_available() else 0
-        dep_eval_time = end_dep_eval - start_dep_eval
-        dep_eval_memory = (dep_eval_memory_after - dep_eval_memory_before) / 1024**2
-        print(f"[Dependent Eval] Time: {dep_eval_time:.2f}s | Memory: {dep_eval_memory:.2f}MB")
+        ibs_dep_end_time = time.time()
+        ibs_dep_time = ibs_dep_end_time - ibs_dep_start_time        
 
+        mae_dep_start_time = time.time()
+        mae_dep_bg = dep_evaluator.mae(method="BG")
+        mae_dep_end_time = time.time()
+        mae_dep_time = mae_dep_end_time - mae_dep_start_time     
+        
         # Create results
-        runtime_row = pd.Series([seed, model_name, dataset_name, strategy,
-                                copula_runtime, copula_memory_used,
-                                standard_eval_time, standard_eval_memory,
-                                dep_eval_time, dep_eval_memory],
-                                index=runtime_log.columns)
+        runtime_row = pd.Series([
+            seed, model_name, dataset_name, strategy,
+            copula_runtime, copula_memory_used,
+            ci_harrell_time, ci_uno_time, ibs_ipcw_time, mae_margin_time,
+            ci_dep_time, ibs_dep_time, mae_dep_time
+        ], index=runtime_log.columns)
         runtime_log = pd.concat([runtime_log, runtime_row.to_frame().T], ignore_index=True)
 
         # Save results
-        runtime_log_path = f"{cfg.RESULTS_DIR}/copula_runtime_log.csv"
+        runtime_log_path = f"{cfg.RESULTS_DIR}/semisynthetic_results_timing.csv"
         if os.path.exists(runtime_log_path):
             existing_log = pd.read_csv(runtime_log_path)
             runtime_log = pd.concat([existing_log, runtime_log], ignore_index=True)
