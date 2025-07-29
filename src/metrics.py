@@ -115,7 +115,7 @@ class DependentEvaluator:
             cg_linear_zero = cg_model.cg_linear_zero
             if np.isinf(cg_linear_zero):
                 cg_linear_zero = max(cg_model.survival_times)
-            predicted_times = np.clip(predicted_times, a_max=cg_linear_zero, a_min=None)
+            predicted_times = np.clip(self.predicted_event_times, a_max=cg_linear_zero, a_min=None)
             risks = -1 * predicted_times
 
             censor_times = event_times[~event_indicators]
@@ -128,8 +128,11 @@ class DependentEvaluator:
             bg_event_times = np.copy(event_times)
             bg_event_times[~event_indicators] = best_guesses
             
+            
+            
             cindex, concordant_pairs, discordant_pairs, risk_ties, time_ties = estimate_concordance_index(
                 event_indicators, event_times, estimate=risks, bg_event_time=bg_event_times, partial_weights=partial_weights)
+    
         elif method == "IPCW":
             time_bins = self.time_coordinates
             cg_model_event = CopulaGraphicWrapper(time_bins, train_event_times, train_event_indicators,
