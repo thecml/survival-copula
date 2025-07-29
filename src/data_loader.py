@@ -24,6 +24,12 @@ def _make_df(data):
           .assign(event=d))
     return df
 
+def kendall_to_pearson(tau: float) -> float:
+    if not -1 <= tau <= 1:
+        raise ValueError("Kendall's tau must be between -1 and 1.")
+    rho = np.sin(np.pi * tau / 2)
+    return rho
+
 class BaseDataLoader(ABC):
     """
     Base class for data loaders.
@@ -134,6 +140,13 @@ class SingleEventSyntheticDataLoader(BaseDataLoader):
             u = torch.tensor(rng.uniform(0, 1, n_samples), device=device, dtype=dtype)
             v = torch.tensor(rng.uniform(0, 1, n_samples), device=device, dtype=dtype)
             uv = torch.stack([u, v], dim=1)
+        elif copula_name == "gaussian":
+            rho = kendall_to_pearson(k_tau)
+            corr_matrix = np.array([[1.0, rho], [rho, 1.0]])
+            u, v = simulation.simu_gaussian(2, X.shape[0], corr_matrix)
+            u = torch.from_numpy(u).type(dtype).reshape(-1,1)
+            v = torch.from_numpy(v).type(dtype).reshape(-1,1)
+            uv = torch.cat([u, v], axis=1)
         else:
             theta = kendall_tau_to_theta(copula_name, k_tau)
             u, v = simulation.simu_archimedean(copula_name, 2, X.shape[0], theta=theta)
