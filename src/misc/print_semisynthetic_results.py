@@ -6,7 +6,7 @@ from utility.data import get_dataset_info, map_dataset_name, map_strategy_name
 from utility.survival import theta_to_kendall_tau
 
 N_DECIMALS = 3
-SIGMA_LEVEL = 2
+sigma_level = 1
                 
 def calculate_errors(results, dataset, strategy, model_names, metrics):
     true_metrics = {f"{metric}True": metric for metric in ["CI", "IBS", "MAE"]}

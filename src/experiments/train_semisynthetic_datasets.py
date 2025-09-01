@@ -16,8 +16,8 @@ from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.util import predict_median_survival_time
 from scipy.interpolate import interp1d
 
-from models import Weibull_log_linear, Weibull_nonlinear
-from strategies import combine_data_with_censor, make_synthetic_censoring
+from models import Weibull_log_linear, Weibull_model
+from strategies import combine_data_with_censor, make_semi_synth, make_synthetic_censoring
 from utility.preprocessor import Preprocessor
 from utility.survival import convert_to_structured, make_stratified_split, make_time_bins
 from trainer import train_copula_model
@@ -64,17 +64,8 @@ if __name__ == "__main__":
     X = transformer.transform(df_full.drop(['time', 'event'], axis=1)).reset_index(drop=True)
     df_full = pd.concat([X, df_full[['time', 'event']]], axis=1)
     
-    # Drop censored rows
-    df = df_full.drop(df_full[df_full.event == 0].index)
-    df.reset_index(drop=True, inplace=True)
-    df.time = df.time.round().astype(int)
-    
-    # Make synthetic censoring time
-    censor_times, selected_features = make_synthetic_censoring(strategy, df, df_full)
-    censor_times = np.round(censor_times).astype(int)
-    
-    # Combine truth and censored data to make semi-synthetic dataset
-    df = combine_data_with_censor(df, censor_times, selected_features)
+    # Make semi-synthetic dataset
+    df = make_semi_synth(df_full)
     
     # Split data
     df_train, df_valid, df_test = make_stratified_split(df, stratify_colname='both', frac_train=0.7,
@@ -85,11 +76,11 @@ if __name__ == "__main__":
     df_train, df_valid, df_test = fix_types(df_train, df_valid, df_test)
   
     # Process data
-    data_train = df_train.drop(columns=["true_time"])
+    data_train = df_train.drop(columns=["true_time", "true_censor"])
     true_test_time = df_test.true_time.values
     true_test_event = np.ones(df_test.shape[0])
-    data_valid = df_valid.drop(columns=["true_time"])
-    data_test = df_test.drop(columns=["true_time"])
+    data_valid = df_valid.drop(columns=["true_time", "true_censor"])
+    data_test = df_test.drop(columns=["true_time", "true_censor"])
     X_train = data_train.drop(columns=["time", "event"])
     X_valid = data_valid.drop(columns=["time", "event"])
     X_test = data_test.drop(columns=["time", "event"])
@@ -131,10 +122,10 @@ if __name__ == "__main__":
         torch.cuda.manual_seed_all(0)
         random.seed(0)
         
-        torch.cuda.empty_cache() # empty cache
+        torch.cuda.empty_cache()
         
-        dep_model1 = Weibull_nonlinear(n_features, dtype=dtype, device=device)
-        dep_model2 = Weibull_nonlinear(n_features, dtype=dtype, device=device)
+        dep_model1 = Weibull_model(n_features, dtype=dtype, device=device)
+        dep_model2 = Weibull_model(n_features, dtype=dtype, device=device)
         
         if copula_name == "clayton":
             copula = Clayton_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
@@ -144,7 +135,7 @@ if __name__ == "__main__":
         dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
                                                                           valid_dict, copula=copula, n_epochs=10000,
                                                                           patience=100, lr=0.001, batch_size=n_samples,
-                                                                          copula_name=copula_name, verbose=False)
+                                                                          copula_name=copula_name, verbose=True)
         copula_theta = float(copula.parameters()[0][0])
         copula_result[copula_name] = {"theta": copula_theta, "val_loss": min_val_loss}
         
@@ -265,8 +256,8 @@ if __name__ == "__main__":
 
         # Calculate dependent metrics
         dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                           data_train.time.values, data_train.event.values, copula_name=best_copula_name,
-                                           alpha=best_copula_theta)
+                                        data_train.time.values, data_train.event.values, copula_name=best_copula_name,
+                                        alpha=best_copula_theta)
         ci_dep_ipcw = dep_evaluator.concordance(method="IPCW")[0]
         ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
         mae_dep_bg = dep_evaluator.mae(method="BG")

@@ -6,7 +6,7 @@ from utility.data import get_dataset_info, map_dataset_name, map_strategy_name
 from utility.survival import theta_to_kendall_tau
 
 N_DECIMALS = 3
-SIGMA_LEVEL = 2
+sigma_level = 1
                 
 if __name__ == "__main__":
     df = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "synthetic_results_wrong_copula_gauss.csv"))

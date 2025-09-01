@@ -16,7 +16,7 @@ from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.util import predict_median_survival_time
 from scipy.interpolate import interp1d
 
-from models import Weibull_log_linear, Weibull_nonlinear
+from models import Weibull_log_linear, Weibull_model
 from strategies import combine_data_with_censor, make_synthetic_censoring
 from utility.preprocessor import Preprocessor
 from utility.survival import convert_to_structured, make_stratified_split, make_time_bins
@@ -142,8 +142,8 @@ if __name__ == "__main__":
         
         torch.cuda.empty_cache() # empty cache
         
-        dep_model1 = Weibull_nonlinear(n_features, dtype=dtype, device=device)
-        dep_model2 = Weibull_nonlinear(n_features, dtype=dtype, device=device)
+        dep_model1 = Weibull_model(n_features, dtype=dtype, device=device)
+        dep_model2 = Weibull_model(n_features, dtype=dtype, device=device)
         
         if copula_name == "clayton":
             copula = Clayton_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
