@@ -38,7 +38,7 @@ data_cfg = {
 
 SEEDS = list(range(0, 100))
 COPULA_NAMES = ["clayton", "frank"]
-K_TAU = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+K_TAU = [0.0, 0.25, 0.5, 0.75]
 DATA = [(10000, 10)]
 LINEAR = True
 
