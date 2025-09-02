@@ -57,6 +57,21 @@ MTLR_PARAMS = {
     'patience': 10
 }
 
+MENSA_PARAMS = {
+    'layers': [32],
+    'lr': 0.001,
+    'n_epochs': 1000,
+    'n_dists': 3,
+    'batch_size': 32,
+    'weight_decay': 0,
+    'dropout_rate': 0.25,
+}
+
+WEIBULL_AFT_PARAMS = {
+    'penalizer': 0,
+    'l1_ratio' :0
+}
+
 mimic_features = ['I50',
  'I12',
  'K72',

@@ -7,10 +7,11 @@ from data_loader import get_data_loader
 import pandas as pd
 import numpy as np
 import config as cfg
+from mensa.model import MENSA
 from metrics import DependentEvaluator
 from sota.deepsurv import DeepSurv, make_deepsurv_prediction, train_deepsurv_model
 from sota.mtlr import make_mtlr_prediction, mtlr, train_mtlr_model
-from sota.sksurv import make_cox_model, make_gbsa_model, make_rsf_model
+from sota.sksurv import make_cox_model, make_gbsa_model, make_rsf_model, make_weibull_aft_model
 from utility.data import dotdict, fix_types
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.util import predict_median_survival_time
@@ -37,7 +38,7 @@ torch.set_default_dtype(dtype)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-MODELS = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
+MODELS = ["coxph", "weibullaft", "deepsurv", "mtlr", "mensa"]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -133,9 +134,9 @@ if __name__ == "__main__":
             copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
             
         dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
-                                                                          valid_dict, copula=copula, n_epochs=10000,
+                                                                          valid_dict, copula=copula, n_epochs=100,
                                                                           patience=100, lr=0.001, batch_size=n_samples,
-                                                                          copula_name=copula_name, verbose=True)
+                                                                          copula_name=copula_name, verbose=False)
         copula_theta = float(copula.parameters()[0][0])
         copula_result[copula_name] = {"theta": copula_theta, "val_loss": min_val_loss}
         
@@ -160,6 +161,10 @@ if __name__ == "__main__":
         if model_name == "coxph":
             config = dotdict(cfg.COXPH_PARAMS)
             model = make_cox_model(config)
+            model.fit(X_train, y_train)
+        elif model_name == "weibullaft":
+            config = dotdict(cfg.WEIBULL_AFT_PARAMS)
+            model = make_weibull_aft_model(config)
             model.fit(X_train, y_train)
         elif model_name == "gbsa":
             config = dotdict(cfg.GBSA_PARAMS)
@@ -193,6 +198,20 @@ if __name__ == "__main__":
             model = train_mtlr_model(model, data_train, data_valid, time_bins.cpu().numpy(),
                                      config, random_state=0, dtype=dtype,
                                      reset_model=True, device=device)
+        elif model_name == "mensa":
+            config = dotdict(cfg.MENSA_PARAMS)
+            n_epochs = config['n_epochs']
+            n_dists = config['n_dists']
+            lr = config['lr']
+            batch_size = config['batch_size']
+            layers = config['layers']
+            weight_decay = config['weight_decay']
+            dropout_rate = config['dropout_rate']
+            model = MENSA(n_features, layers=layers, dropout_rate=dropout_rate,
+                          n_events=1, n_dists=n_dists, device=device)
+            model.fit(train_dict, valid_dict, learning_rate=lr, n_epochs=n_epochs,
+                      weight_decay=weight_decay, patience=20,
+                      batch_size=batch_size, verbose=False)
         else:
             raise NotImplementedError()
         end_time = time.time()
@@ -205,6 +224,14 @@ if __name__ == "__main__":
         if model_name in ["coxph", "gbsa", "rsf"]:
             survival_outputs = model.predict_survival_function(X_test)
             survival_outputs = np.row_stack([fn(time_bins.cpu().numpy()) for fn in survival_outputs])
+        elif model_name == "weibullaft":
+            times_numpy = time_bins.cpu().numpy()
+            X_test_df = pd.DataFrame(test_dict['X'].cpu().numpy(),
+                                     columns=model.feature_names_)
+            surv_df = model.model.predict_survival_function(X_test_df, times=times_numpy)
+            preds_array = np.minimum(np.asarray(surv_df.T), 1.0)
+            model_preds = pd.DataFrame(preds_array, columns=times_numpy)
+            survival_outputs = model_preds.to_numpy()
         elif model_name == "deepsurv":
             survival_outputs, time_bins_deepsurv = make_deepsurv_prediction(model, test_dict['X'].to(device),
                                                                             config=config, dtype=dtype)
@@ -220,6 +247,9 @@ if __name__ == "__main__":
                                           dtype=dtype, device=device)
             survival_outputs, _, _ = make_mtlr_prediction(model, mtlr_test_data, time_bins, config)
             survival_outputs = survival_outputs[:, 1:].cpu().numpy()
+        elif model_name == "mensa":
+            model_preds = model.predict(test_dict['X'], time_bins, risk=1)
+            survival_outputs = model_preds
         else:
             raise NotImplementedError()
         
