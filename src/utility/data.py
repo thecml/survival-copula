@@ -56,7 +56,7 @@ def map_dataset_name(dataset_name):
         "seer_stomach": "SEER (stomach)",
     }.get(dataset_name, dataset_name)
     
-def downsample_dataset(df, name, time_col="time", event_col="event",
+def subsample_dataset(df, name, time_col="time", event_col="event",
                        n_bins=10, censor_ratio=5, target_size=None, random_state=42):
     """
     Downsample survival datasets according to predefined rules.
@@ -69,15 +69,6 @@ def downsample_dataset(df, name, time_col="time", event_col="event",
 
     df = df.copy()
     df["time_bin"] = pd.qcut(df[time_col], q=n_bins, duplicates="drop")
-
-    def _summarize(df_in, label):
-        n_total = len(df_in)
-        n_events = df_in[event_col].sum()
-        pct_cens = 100 * (1 - n_events / n_total)
-        print(f"{label}: {n_total:,} rows, {n_events:,} events, {pct_cens:.1f}% censored")
-
-    # Before summary
-    _summarize(df, f"[Before] {name}")
 
     # --- Rules by dataset ---
     if name == "metabric":
@@ -127,9 +118,6 @@ def downsample_dataset(df, name, time_col="time", event_col="event",
 
     # Drop helper column and shuffle
     out = out.drop(columns=["time_bin"]).sample(frac=1.0, random_state=random_state).reset_index(drop=True)
-
-    # After summary
-    _summarize(out, f"[After] {name}")
 
     return out
 

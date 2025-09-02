@@ -3,7 +3,7 @@ import os
 import random
 import torch
 from copula import Clayton_Bivariate, Frank_Bivariate
-from data_loader import get_data_loader
+from data_loader import SingleEventSyntheticDataLoader, get_data_loader
 import pandas as pd
 import numpy as np
 import config as cfg
@@ -12,7 +12,7 @@ from metrics import DependentEvaluator
 from sota.deepsurv import DeepSurv, make_deepsurv_prediction, train_deepsurv_model
 from sota.mtlr import make_mtlr_prediction, mtlr, train_mtlr_model
 from sota.sksurv import make_cox_model, make_gbsa_model, make_rsf_model, make_weibull_aft_model
-from utility.data import dotdict, fix_types
+from utility.data import dotdict, subsample_dataset, fix_types
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.util import predict_median_survival_time
 from scipy.interpolate import interp1d
@@ -44,7 +44,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--dataset_name', type=str, default='seer_liver')
+    parser.add_argument('--dataset_name', type=str, default='metabric')
     parser.add_argument('--strategy', type=str, default='original')
     
     args = parser.parse_args()
@@ -66,17 +66,17 @@ if __name__ == "__main__":
     df_full = pd.concat([X, df_full[['time', 'event']]], axis=1)
     
     # Make semi-synthetic dataset
-    df = make_semi_synth(df_full)
+    df = make_semi_synth(df_full, strategy=strategy)
     
-    # Downsample
+    # Subsample
     if dataset_name == "metabric":
-        df = downsample_dataset(df.copy(), dataset_name)
+        df = subsample_dataset(df.copy(), dataset_name)
     elif dataset_name == "mimic_all":
-        df = downsample_dataset(df.copy(), dataset_name, target_size=20000)
+        df = subsample_dataset(df.copy(), dataset_name, target_size=20000)
     elif dataset_name == "mimic_hospital":
-        df = downsample_dataset(df.copy(), dataset_name, censor_ratio=5)
+        df = subsample_dataset(df.copy(), dataset_name, censor_ratio=5)
     elif dataset_name in ["seer_brain", "seer_liver", "seer_stomach"]:
-        df = downsample_dataset(df.copy(), dataset_name, target_size=20000)
+        df = subsample_dataset(df.copy(), dataset_name, target_size=20000)
     else:
         raise ValueError("Invalid dataset")
         
@@ -141,15 +141,15 @@ if __name__ == "__main__":
         dep_model2 = Weibull_model(n_features, dtype=dtype, device=device)
         
         if copula_name == "clayton":
-            copula = Clayton_Bivariate(1.0, 1e-4, dtype=dtype, device=device)
+            copula = Clayton_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
         elif copula_name == "frank":
             copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
             
         dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
-                                                                          valid_dict, copula=copula, n_epochs=10000,
-                                                                          patience=100, lr=0.01, batch_size=n_samples,
+                                                                          valid_dict, copula=copula, n_epochs=30000,
+                                                                          lr=0.01, batch_size=n_samples,
                                                                           copula_name=copula_name, verbose=True)
-        copula_theta = float(copula.parameters()[0][0])
+        copula_theta = copula.theta.item()
         copula_result[copula_name] = {"theta": copula_theta, "val_loss": min_val_loss}
         
         if min_val_loss < best_loss:
@@ -158,7 +158,7 @@ if __name__ == "__main__":
             best_copula_theta = copula_theta
             
     print(f"Best copula: {best_copula_name} with theta = {best_copula_theta} and val_loss = {best_loss}")
-        
+    
     for model_name in MODELS:
         # Reset seeds
         np.random.seed(0)
