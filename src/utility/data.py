@@ -1,3 +1,6 @@
+import pandas as pd
+
+
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
     __getattr__ = dict.get
@@ -52,3 +55,81 @@ def map_dataset_name(dataset_name):
         "seer_prostate": "SEER (prostate)",
         "seer_stomach": "SEER (stomach)",
     }.get(dataset_name, dataset_name)
+    
+def downsample_dataset(df, name, time_col="time", event_col="event",
+                       n_bins=10, censor_ratio=5, target_size=None, random_state=42):
+    """
+    Downsample survival datasets according to predefined rules.
+    Dataset names supported:
+    - "metabric"
+    - "mimic_all"
+    - "mimic_hospital"
+    - "seer_brain", "seer_liver", "seer_stomach"
+    """
+
+    df = df.copy()
+    df["time_bin"] = pd.qcut(df[time_col], q=n_bins, duplicates="drop")
+
+    def _summarize(df_in, label):
+        n_total = len(df_in)
+        n_events = df_in[event_col].sum()
+        pct_cens = 100 * (1 - n_events / n_total)
+        print(f"{label}: {n_total:,} rows, {n_events:,} events, {pct_cens:.1f}% censored")
+
+    # Before summary
+    _summarize(df, f"[Before] {name}")
+
+    # --- Rules by dataset ---
+    if name == "metabric":
+        out = df
+
+    elif name == "mimic_hospital":
+        # Keep all events, sample censored up to ratio
+        events = df[df[event_col] == 1]
+        cens   = df[df[event_col] == 0]
+
+        n_events = len(events)
+        n_censor_target = min(len(cens), censor_ratio * n_events)
+
+        cens_keep = cens.groupby("time_bin", group_keys=False).apply(
+            lambda x: x.sample(
+                n=max(1, int(len(x) * n_censor_target / len(cens))),
+                random_state=random_state
+            )
+        )
+        out = pd.concat([events, cens_keep], axis=0)
+
+    elif name == "mimic_all":
+        if target_size is None:
+            out = df
+        else:
+            grouped = df.groupby([event_col, "time_bin"], group_keys=False)
+            out = grouped.apply(
+                lambda x: x.sample(
+                    n=max(1, int(len(x) * target_size / len(df))),
+                    random_state=random_state
+                )
+            )
+
+    elif name in ["seer_brain", "seer_liver", "seer_stomach"]:
+        if target_size is None:
+            target_size = 20000
+        grouped = df.groupby([event_col, "time_bin"], group_keys=False)
+        out = grouped.apply(
+            lambda x: x.sample(
+                n=max(1, int(len(x) * target_size / len(df))),
+                random_state=random_state
+            )
+        )
+
+    else:
+        raise ValueError(f"Unknown dataset name: {name}")
+
+    # Drop helper column and shuffle
+    out = out.drop(columns=["time_bin"]).sample(frac=1.0, random_state=random_state).reset_index(drop=True)
+
+    # After summary
+    _summarize(out, f"[After] {name}")
+
+    return out
+

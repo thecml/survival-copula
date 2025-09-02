@@ -11,7 +11,7 @@ from metrics import DependentEvaluator
 from sota.deepsurv import DeepSurv, make_deepsurv_prediction, train_deepsurv_model
 from sota.mtlr import make_mtlr_prediction, mtlr, train_mtlr_model
 from sota.sksurv import make_cox_model, make_gbsa_model, make_rsf_model
-from utility.data import dotdict, fix_types
+from utility.data import dotdict, downsample_dataset, fix_types
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.util import predict_median_survival_time
 from scipy.interpolate import interp1d
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--dataset_name', type=str, default='metabric')
+    parser.add_argument('--dataset_name', type=str, default='seer_liver')
     parser.add_argument('--strategy', type=str, default='original')
     
     args = parser.parse_args()
@@ -67,6 +67,18 @@ if __name__ == "__main__":
     # Make semi-synthetic dataset
     df = make_semi_synth(df_full)
     
+    # Downsample
+    if dataset_name == "metabric":
+        df = downsample_dataset(df.copy(), dataset_name)
+    elif dataset_name == "mimic_all":
+        df = downsample_dataset(df.copy(), dataset_name, target_size=20000)
+    elif dataset_name == "mimic_hospital":
+        df = downsample_dataset(df.copy(), dataset_name, censor_ratio=5)
+    elif dataset_name in ["seer_brain", "seer_liver", "seer_stomach"]:
+        df = downsample_dataset(df.copy(), dataset_name, target_size=20000)
+    else:
+        raise ValueError("Invalid dataset")
+        
     # Split data
     df_train, df_valid, df_test = make_stratified_split(df, stratify_colname='both', frac_train=0.7,
                                                         frac_valid=0.1, frac_test=0.2,
@@ -128,7 +140,7 @@ if __name__ == "__main__":
         dep_model2 = Weibull_model(n_features, dtype=dtype, device=device)
         
         if copula_name == "clayton":
-            copula = Clayton_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
+            copula = Clayton_Bivariate(1.0, 1e-4, dtype=dtype, device=device)
         elif copula_name == "frank":
             copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
             
