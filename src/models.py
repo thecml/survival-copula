@@ -238,7 +238,7 @@ class Weibull_log_linear:
     
 class Weibull_model(nn.Module):
     def __init__(self, n_features, hidden_units=32,
-                 non_linear=False, device="cpu",
+                 non_linear=True, device="cpu",
                  dtype=torch.float64):
         super(Weibull_model, self).__init__()
         self.device = device
@@ -253,12 +253,14 @@ class Weibull_model(nn.Module):
         if self.non_linear:
             self.net = nn.Sequential(
                 nn.Linear(n_features, hidden_units, device=device, dtype=dtype),
+                nn.BatchNorm1d(hidden_units),
                 nn.ReLU(),
                 nn.Linear(hidden_units, 1, device=device, dtype=dtype)
             )
         else:
             self.net = nn.Sequential(
                 nn.Linear(n_features, hidden_units, device=device, dtype=dtype),
+                nn.BatchNorm1d(hidden_units),
                 nn.Linear(hidden_units, 1, device=device, dtype=dtype)
             )
 
