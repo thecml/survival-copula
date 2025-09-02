@@ -15,7 +15,7 @@ COXPH_PARAMS = {
 GBSA_PARAMS = {
     'n_estimators': 100,
     'learning_rate': 0.1,
-    'max_depth': 1,
+    'max_depth': 3,
     'loss': 'coxph',
     'min_samples_split': 2,
     'min_samples_leaf': 1,
@@ -27,7 +27,7 @@ GBSA_PARAMS = {
 
 RSF_PARAMS = {
     'n_estimators': 100,
-    'max_depth': 1,
+    'max_depth': 3,
     'min_samples_split': 2,
     'min_samples_leaf': 1,
     'max_features': 'sqrt',
@@ -55,6 +55,21 @@ MTLR_PARAMS = {
     'batch_size': 32,
     'early_stop': True,
     'patience': 10
+}
+
+MENSA_PARAMS = {
+    'layers': [32],
+    'lr': 0.001,
+    'n_epochs': 1000,
+    'n_dists': 3,
+    'batch_size': 32,
+    'weight_decay': 0,
+    'dropout_rate': 0.25,
+}
+
+WEIBULL_AFT_PARAMS = {
+    'penalizer': 0,
+    'l1_ratio' :0
 }
 
 mimic_features = ['I50',

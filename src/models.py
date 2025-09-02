@@ -253,13 +253,13 @@ class Weibull_model(nn.Module):
         if self.non_linear:
             self.net = nn.Sequential(
                 nn.Linear(n_features, hidden_units, device=device, dtype=dtype),
+                nn.BatchNorm1d(hidden_units).to(device),
                 nn.ReLU(),
                 nn.Linear(hidden_units, 1, device=device, dtype=dtype)
             )
         else:
             self.net = nn.Sequential(
-                nn.Linear(n_features, hidden_units, device=device, dtype=dtype),
-                nn.Linear(hidden_units, 1, device=device, dtype=dtype)
+                nn.Linear(n_features, 1, device=device, dtype=dtype)
             )
 
     def survival(self, t, x):

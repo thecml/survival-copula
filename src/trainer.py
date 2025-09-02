@@ -135,4 +135,3 @@ def train_copula_model(model1, model2, train_data, val_data,
     model2.load_state_dict(best_model2_weights)
 
     return model1, model2, copula, best_val_loss
-
