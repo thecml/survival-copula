@@ -26,7 +26,7 @@ def loss_function(model1, model2, data, copula=None):
 def train_copula_model(model1, model2, train_data, val_data,
                        n_epochs, batch_size=32, lr=1e-3,
                        copula_name=None, verbose=False, copula=None,
-                       theta_tol=1e-4, theta_patience=200):
+                       theta_tol=1e-4, theta_patience=100, val_patience=100):
     # Enable gradients for models
     model1.enable_grad()
     model2.enable_grad()
@@ -38,7 +38,7 @@ def train_copula_model(model1, model2, train_data, val_data,
     best_model2_weights = None
     best_copula_theta = None
     
-    # Prepare optimizer
+    # Optimizer
     optimizer_params = [{"params": model1.parameters(), "lr": 1e-3},
                         {"params": model2.parameters(), "lr": 1e-3}]
     if copula is not None:
@@ -46,7 +46,7 @@ def train_copula_model(model1, model2, train_data, val_data,
     
     optimizer = torch.optim.Adam(optimizer_params)
 
-    # Create DataLoaders
+    # DataLoaders
     train_loader = DataLoader(
         TensorDataset(train_data['T'], train_data['X'], train_data['E']),
         batch_size=batch_size, shuffle=True
@@ -56,9 +56,10 @@ def train_copula_model(model1, model2, train_data, val_data,
         batch_size=batch_size, shuffle=False
     )
 
-    # Track theta stagnation
+    # Track stagnation
     theta_stop_itr = 0
     last_theta = None
+    val_stop_itr = 0
     
     for epoch in range(n_epochs):
         optimizer.zero_grad()
@@ -77,11 +78,11 @@ def train_copula_model(model1, model2, train_data, val_data,
             # Scale gradients
             if copula is not None:
                 copula.theta.grad = copula.theta.grad * 100
-                copula.theta.grad = copula.theta.grad.clamp(-1,1)
+                copula.theta.grad = copula.theta.grad.clamp(-1, 1)
 
             optimizer.step()
 
-            # Ensure valid values for theta
+            # Ensure valid theta
             if copula is not None:
                 if copula.theta <= 0:
                     with torch.no_grad():
@@ -100,22 +101,25 @@ def train_copula_model(model1, model2, train_data, val_data,
                 copula_theta = copula.theta.item() if copula is not None else None
                 print(f"Epoch {epoch}, Validation Loss: {val_loss:.3f} - Copula Theta: {copula_theta:.3f}")
 
-            if val_loss < best_val_loss:
+            if val_loss < best_val_loss - 1e-6:  # tiny tolerance
                 best_model1_weights = model1.state_dict()
                 best_model2_weights = model2.state_dict()
                 best_copula_theta = copula.theta.detach().clone() if copula is not None else None
                 best_val_loss = val_loss
+                val_stop_itr = 0  # reset patience if improved
+            else:
+                val_stop_itr += 1
 
-        # Theta-based early stopping
+        # --- Theta-based stagnation check ---
         if copula is not None:
             theta_val = copula.theta.detach().cpu().item()
             
-            min_free_theta = 1e-2      # don't check until |theta| passes this
-            min_epochs = 2000          # guard: don't stop too early
-            theta_abs_tol = 1e-3       # absolute tolerance
-            theta_rel_tol = 1e-4       # relative tolerance
+            min_free_theta = 1e-2      # ignore until theta > this
+            min_epochs = 2000          # guard against premature stop
+            theta_abs_tol = 1e-3
+            theta_rel_tol = 1e-4
             
-            if abs(theta_val) > min_free_theta:  # only check outside dead zone
+            if abs(theta_val) > min_free_theta:
                 if last_theta is None:
                     last_theta = theta_val
                 else:
@@ -128,14 +132,16 @@ def train_copula_model(model1, model2, train_data, val_data,
                     else:
                         theta_stop_itr = 0
                     last_theta = theta_val
-
-                if epoch >= min_epochs and theta_stop_itr >= theta_patience:
-                    print(f"Stopping early at epoch {epoch}: θ converged ({theta_val:.4f})")
-                    break
             else:
-                # reset counter until theta escapes clamp zone
+                # reset until theta escapes small zone
                 theta_stop_itr = 0
                 last_theta = theta_val
+
+        # --- Combined early stopping ---
+        if epoch >= min_epochs and theta_stop_itr >= theta_patience and val_stop_itr >= val_patience:
+            print(f"Stopping early at epoch {epoch}: θ converged ({theta_val:.4f}) "
+                  f"and validation loss not improving.")
+            break
 
     # Restore best
     if best_model1_weights is not None:

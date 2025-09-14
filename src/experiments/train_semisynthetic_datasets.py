@@ -44,7 +44,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--dataset_name', type=str, default='metabric')
+    parser.add_argument('--dataset_name', type=str, default='seer_liver')
     parser.add_argument('--strategy', type=str, default='original')
     
     args = parser.parse_args()
@@ -72,11 +72,11 @@ if __name__ == "__main__":
     if dataset_name == "metabric":
         df = subsample_dataset(df.copy(), dataset_name)
     elif dataset_name == "mimic_all":
-        df = subsample_dataset(df.copy(), dataset_name, target_size=20000)
+        df = subsample_dataset(df.copy(), dataset_name, target_size=10000)
     elif dataset_name == "mimic_hospital":
-        df = subsample_dataset(df.copy(), dataset_name, censor_ratio=5)
+        df = subsample_dataset(df.copy(), dataset_name, censor_ratio=5, target_size=10000)
     elif dataset_name in ["seer_brain", "seer_liver", "seer_stomach"]:
-        df = subsample_dataset(df.copy(), dataset_name, target_size=20000)
+        df = subsample_dataset(df.copy(), dataset_name, target_size=10000)
     else:
         raise ValueError("Invalid dataset")
         
@@ -148,7 +148,7 @@ if __name__ == "__main__":
         dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
                                                                           valid_dict, copula=copula, n_epochs=30000,
                                                                           lr=0.01, batch_size=n_samples,
-                                                                          copula_name=copula_name, verbose=True)
+                                                                          copula_name=copula_name, verbose=False)
         copula_theta = copula.theta.item()
         copula_result[copula_name] = {"theta": copula_theta, "val_loss": min_val_loss}
         

@@ -90,6 +90,16 @@ def subsample_dataset(df, name, time_col="time", event_col="event",
         )
         out = pd.concat([events, cens_keep], axis=0)
 
+        # --- Enforce target_size if given ---
+        if target_size is not None and len(out) > target_size:
+            grouped = out.groupby([event_col, "time_bin"], group_keys=False)
+            out = grouped.apply(
+                lambda x: x.sample(
+                    n=max(1, int(len(x) * target_size / len(out))),
+                    random_state=random_state
+                )
+            )
+
     elif name == "mimic_all":
         if target_size is None:
             out = df
