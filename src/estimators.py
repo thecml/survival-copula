@@ -140,9 +140,9 @@ class CopulaGraphicWrapper():
         average_probabilities = (area_probabilities[0:-1] + area_probabilities[1:]) / 2
         area = np.flip(np.flip(area_diff * average_probabilities).cumsum())
 
-        self.area_times = np.append(area_times, np.inf)
-        self.area_probabilities = area_probabilities
-        self.area = np.append(area, 0)
+        self.area_times = np.append(area_times, np.inf).astype(float)
+        self.area_probabilities = np.asarray(area_probabilities, dtype=float)
+        self.area = np.append(area, 0).astype(float)
 
     def predict(self, prediction_times: np.array):
         """Predict survival probabilities at given times using CG estimator."""
@@ -160,7 +160,10 @@ class CopulaGraphicWrapper():
 
         surv_prob = np.clip(surv_prob, a_min=1e-10, a_max=None)
 
-        censor_indexes = np.digitize(censor_times, self.area_times)
+        censor_indexes = np.digitize(
+            np.asarray(censor_times, dtype=float),
+            np.asarray(self.area_times, dtype=float)
+        )
         censor_indexes = np.where(
             censor_indexes == self.area_times.size + 1,
             censor_indexes - 1,

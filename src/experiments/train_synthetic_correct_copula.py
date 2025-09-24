@@ -38,7 +38,7 @@ data_cfg = {
 
 SEEDS = list(range(0, 100))
 COPULA_NAMES = ["clayton", "frank"]
-K_TAU = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+K_TAU = [0.5]
 DATA = [(10000, 10)]
 LINEAR = True
 
@@ -121,7 +121,7 @@ if __name__ == "__main__":
                     dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                                        data_train.time.values, data_train.event.values, copula_name=copula_name,
                                                        alpha=theta)
-                    ci_dep_ipcw = dep_evaluator.concordance(method="IPCW")[0]
+                    ci_dep_ipcw = dep_evaluator.concordance(method="BG")
                     ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
                     mae_dep_bg = dep_evaluator.mae(method="BG")
                     mae_dep_ipcw = dep_evaluator.mae(method="IPCW")
