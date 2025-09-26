@@ -113,7 +113,6 @@ class CopulaGraphic:
             return np.inf
         return self.survival_times[median_index[0]]
 
-
 class CopulaGraphicWrapper():
     """
     Wrapper class of the CopulaGraphic estimator that implements the best_guess() function.
@@ -178,3 +177,5 @@ class CopulaGraphicWrapper():
                                     * 0.5)
         censor_area[~beyond_idx] += self.area[censor_indexes[~beyond_idx]]
         return censor_times + censor_area / surv_prob
+        
+        

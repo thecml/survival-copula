@@ -38,7 +38,7 @@ torch.set_default_dtype(dtype)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-MODELS = ["coxph", "weibullaft", "deepsurv", "mtlr", "mensa"]
+MODELS = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -66,22 +66,22 @@ if __name__ == "__main__":
     df_full = pd.concat([X, df_full[['time', 'event']]], axis=1)
     
     # Make semi-synthetic dataset
-    df = make_semi_synth(df_full, strategy=strategy)
+    df_synth = make_semi_synth(df_full, strategy=strategy)
     
     # Subsample
     if dataset_name == "metabric":
-        df = subsample_dataset(df.copy(), dataset_name)
+        df_subsample = subsample_dataset(df_synth.copy(), dataset_name)
     elif dataset_name == "mimic_all":
-        df = subsample_dataset(df.copy(), dataset_name, target_size=10000)
+        df_subsample = subsample_dataset(df_synth.copy(), dataset_name, target_size=10000)
     elif dataset_name == "mimic_hospital":
-        df = subsample_dataset(df.copy(), dataset_name, censor_ratio=5, target_size=10000)
+        df_subsample = subsample_dataset(df_synth.copy(), dataset_name, censor_ratio=5, target_size=10000)
     elif dataset_name in ["seer_brain", "seer_liver", "seer_stomach"]:
-        df = subsample_dataset(df.copy(), dataset_name, target_size=10000)
+        df_subsample = subsample_dataset(df_synth.copy(), dataset_name, target_size=10000)
     else:
         raise ValueError("Invalid dataset")
         
     # Split data
-    df_train, df_valid, df_test = make_stratified_split(df, stratify_colname='both', frac_train=0.7,
+    df_train, df_valid, df_test = make_stratified_split(df_subsample, stratify_colname='both', frac_train=0.7,
                                                         frac_valid=0.1, frac_test=0.2,
                                                         random_state=seed)
     
@@ -174,10 +174,6 @@ if __name__ == "__main__":
             config = dotdict(cfg.COXPH_PARAMS)
             model = make_cox_model(config)
             model.fit(X_train, y_train)
-        elif model_name == "weibullaft":
-            config = dotdict(cfg.WEIBULL_AFT_PARAMS)
-            model = make_weibull_aft_model(config)
-            model.fit(X_train, y_train)
         elif model_name == "gbsa":
             config = dotdict(cfg.GBSA_PARAMS)
             model = make_gbsa_model(config)
@@ -210,20 +206,6 @@ if __name__ == "__main__":
             model = train_mtlr_model(model, data_train, data_valid, time_bins.cpu().numpy(),
                                      config, random_state=0, dtype=dtype,
                                      reset_model=True, device=device)
-        elif model_name == "mensa":
-            config = dotdict(cfg.MENSA_PARAMS)
-            n_epochs = config['n_epochs']
-            n_dists = config['n_dists']
-            lr = config['lr']
-            batch_size = config['batch_size']
-            layers = config['layers']
-            weight_decay = config['weight_decay']
-            dropout_rate = config['dropout_rate']
-            model = MENSA(n_features, layers=layers, dropout_rate=dropout_rate,
-                          n_events=1, n_dists=n_dists, device=device)
-            model.fit(train_dict, valid_dict, learning_rate=lr, n_epochs=n_epochs,
-                      weight_decay=weight_decay, patience=20,
-                      batch_size=batch_size, verbose=False)
         else:
             raise NotImplementedError()
         end_time = time.time()
@@ -236,14 +218,6 @@ if __name__ == "__main__":
         if model_name in ["coxph", "gbsa", "rsf"]:
             survival_outputs = model.predict_survival_function(X_test)
             survival_outputs = np.row_stack([fn(time_bins.cpu().numpy()) for fn in survival_outputs])
-        elif model_name == "weibullaft":
-            times_numpy = time_bins.cpu().numpy()
-            X_test_df = pd.DataFrame(test_dict['X'].cpu().numpy(),
-                                     columns=model.feature_names_)
-            surv_df = model.model.predict_survival_function(X_test_df, times=times_numpy)
-            preds_array = np.minimum(np.asarray(surv_df.T), 1.0)
-            model_preds = pd.DataFrame(preds_array, columns=times_numpy)
-            survival_outputs = model_preds.to_numpy()
         elif model_name == "deepsurv":
             survival_outputs, time_bins_deepsurv = make_deepsurv_prediction(model, test_dict['X'].to(device),
                                                                             config=config, dtype=dtype)
@@ -259,9 +233,6 @@ if __name__ == "__main__":
                                           dtype=dtype, device=device)
             survival_outputs, _, _ = make_mtlr_prediction(model, mtlr_test_data, time_bins, config)
             survival_outputs = survival_outputs[:, 1:].cpu().numpy()
-        elif model_name == "mensa":
-            model_preds = model.predict(test_dict['X'], time_bins, risk=1)
-            survival_outputs = model_preds
         else:
             raise NotImplementedError()
         
@@ -278,42 +249,41 @@ if __name__ == "__main__":
         ibs_true = true_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
         mae_true = true_evaluator.mae(method="Uncensored")
         
-        # Calculate censored metrics
-        censored_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
+        # Calculate original metrics
+        original_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                                data_train.time.values, data_train.event.values)
-        ci_harrell = censored_evaluator.concordance()[0]
-        predicted_times = censored_evaluator.predict_time_from_curve(predict_median_survival_time)
+        ci_harrell = original_evaluator.concordance()[0]
+        predicted_times = original_evaluator.predict_time_from_curve(predict_median_survival_time)
         risks = -1 * predicted_times
         ci_uno = concordance_index_ipcw(y_train, y_test, risks, tau=y_train['time'].max())[0]
-        ibs_ipcw = censored_evaluator.integrated_brier_score(num_points=10)
+        ibs_ipcw = original_evaluator.integrated_brier_score(num_points=10)
 
-        mae_hinge = censored_evaluator.mae(method="Hinge")
-        mae_margin = censored_evaluator.mae(method="Margin", weighted=True)
-        mae_pseudo = censored_evaluator.mae(method="Pseudo_obs", weighted=True)
+        mae_hinge = original_evaluator.mae(method="Hinge")
+        mae_margin = original_evaluator.mae(method="Margin", weighted=True)
+        mae_pseudo = original_evaluator.mae(method="Pseudo_obs", weighted=True)
         
-        # Calculate IBS using BG KM weights
+        # Calculate independent metrics
         indep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                              data_train.time.values, data_train.event.values, copula_name="clayton", alpha=0)
-        ibs_bg = indep_evaluator.integrated_brier_score(method="BG", num_points=10)
+        ci_indep_bg = indep_evaluator.concordance(method="BG")[0]
+        ibs_indep_bg = indep_evaluator.integrated_brier_score(method="BG", num_points=10)
+        mae_indep_bg = indep_evaluator.mae(method="BG")
 
         # Calculate dependent metrics
         dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                        data_train.time.values, data_train.event.values, copula_name=best_copula_name,
-                                        alpha=best_copula_theta)
-        ci_dep_ipcw = dep_evaluator.concordance(method="IPCW")[0]
+                                           data_train.time.values, data_train.event.values, copula_name=best_copula_name,
+                                           alpha=best_copula_theta)
+        ci_dep_bg = dep_evaluator.concordance(method="BG")[0]
         ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
         mae_dep_bg = dep_evaluator.mae(method="BG")
 
         # Create results
         result_row = pd.Series([seed, model_name, dataset_name, strategy, best_copula_name, best_copula_theta,
-                                ci_true, ibs_true, mae_true, ci_harrell, ci_uno, ibs_ipcw, ibs_bg, mae_hinge,
-                                mae_margin, mae_pseudo, ci_dep_ipcw, ibs_dep_bg, mae_dep_bg],
-                                index=["Seed", "ModelName", "Dataset", "Strategy",
-                                       "BestCopulaName", "BestCopulaTheta",
-                                       "CITrue", "IBSTrue", "MAETrue",
-                                       "CIHarrell", "CIUno", "IBSIPCW", "IBSBG",
-                                       "MAEHinge", "MAEMargin", "MAEPseudo",
-                                       "CIDepIPCW", "IBSDepBG", "MAEDepBG"])
+                                ci_true, ibs_true, mae_true, ci_harrell, ci_uno, ibs_ipcw, mae_hinge, mae_margin,
+                                ci_indep_bg, ibs_indep_bg, mae_indep_bg, ci_dep_bg, ibs_dep_bg, mae_dep_bg],
+                                index=["Seed", "ModelName", "Dataset", "Strategy", "BestCopulaName", "BestCopulaTheta",
+                                       "CITrue", "IBSTrue", "MAETrue", "CIHarrell", "CIUno",  "IBSIPCW", "MAEHinge", "MAEMargin",
+                                       "CIIndepBG", "IBSIndepBG", "MAEIndepBG", "CIDepBG", "IBSDepBG", "MAEDepBG"])
         model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
     
         # Save results

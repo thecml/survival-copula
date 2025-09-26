@@ -13,53 +13,6 @@ from SurvivalEVAL.Evaluations.util import (check_and_convert, KaplanMeierArea, k
                                            predict_multi_probs_from_curve)
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
 
-def concordance_index_best_guess(event_indicator, event_time, estimate, cg_model, tied_tol=1e-8):
-    # Impute censored cases with CG best guesses
-    event_times_bg = event_time.copy()
-    cens_mask = (event_indicator == 0)
-    event_times_bg[cens_mask] = cg_model.best_guess(event_time[cens_mask])
-
-    n = len(event_time)
-    numerator = denominator = 0.0
-    concordant = discordant = tied_risk = 0
-    tied_time = None
-
-    for i in range(n):
-        for j in range(i + 1, n):
-            # skip censored–censored pairs
-            if event_indicator[i] == 0 and event_indicator[j] == 0:
-                continue
-
-            ti, tj = event_times_bg[i], event_times_bg[j]
-            ri, rj = estimate[i], estimate[j]
-
-            if ti == tj:
-                continue  # not comparable
-
-            tied_time = min(ti, tj)
-
-            # earlier time = "event" for the pair
-            if ti < tj:
-                if abs(ri - rj) <= tied_tol:
-                    numerator += 0.5; tied_risk += 1
-                elif ri > rj:  # higher risk = correct
-                    numerator += 1; concordant += 1
-                else:
-                    discordant += 1
-                denominator += 1
-
-            elif tj < ti:
-                if abs(ri - rj) <= tied_tol:
-                    numerator += 0.5; tied_risk += 1
-                elif rj > ri:
-                    numerator += 1; concordant += 1
-                else:
-                    discordant += 1
-                denominator += 1
-
-    cindex = numerator / denominator
-    return cindex, concordant, discordant, tied_risk, tied_time
-
 class DependentEvaluator:
     def __init__(self,
             predicted_survival_curves: NumericArrayLike,
@@ -152,7 +105,6 @@ class DependentEvaluator:
         alpha = self.alpha
         
         if method == "BG":
-            censored_times = event_times[event_indicators == 0]
             time_bins = self.time_coordinates
             cg_model = CopulaGraphicWrapper(time_bins, train_event_times, train_event_indicators,
                                             copula_name=copula_name, alpha=alpha)
@@ -167,31 +119,54 @@ class DependentEvaluator:
             partial_weights = np.ones_like(event_indicators, dtype=float)
             partial_weights[~event_indicators.astype(bool)] = 1 - cg_model.predict(censor_times)
             
-            cindex, concordant, discordant, tied_risk, tied_time = concordance_index_best_guess(event_indicators, event_times,
-                                                                                                risks, cg_model)
-            
-            return cindex
-            
-            #censored_times_bg = cg_model.best_guess(censored_times)
-            #event_times_bg = event_times.copy()
-            #event_times_bg[event_indicators == 0] = censored_times_bg
+            # Impute censored cases with CG best guesses
+            event_times_bg = event_times.copy()
+            cens_mask = (event_indicators == 0)
+            event_times_bg[cens_mask] = cg_model.best_guess(event_times[cens_mask])
 
-            # Now treat all as events
-            #event_times = event_times_bg
-            #event_indicators = np.ones_like(event_indicators).astype(bool)
-        
-            censor_times = censored_times
-            partial_weights = np.ones_like(event_indicators, dtype=float)
-            partial_weights[~event_indicators.astype(bool)] = 1 - cg_model.predict(censor_times)
-            
-            cindex, concordant_pairs, discordant_pairs, risk_ties, time_ties = estimate_concordance_index(
-                event_indicators.astype(bool),
-                event_times,
-                risks,
-                weights=partial_weights
-            )
+            n = len(event_times)
+            numerator = denominator = 0.0
+            concordant = discordant = tied_risk = 0
+            tied_time = None
+            tied_tol = 1e-8
 
-            return cindex
+            # Calculate CI
+            for i in range(n):
+                for j in range(i + 1, n):
+                    # skip censored–censored pairs
+                    if event_indicators[i] == 0 and event_indicators[j] == 0:
+                        continue
+
+                    ti, tj = event_times_bg[i], event_times_bg[j]
+                    ri, rj = risks[i], risks[j]
+
+                    if ti == tj:
+                        continue  # not comparable
+
+                    tied_time = min(ti, tj)
+
+                    # earlier time = "event" for the pair
+                    if ti < tj:
+                        if abs(ri - rj) <= tied_tol:
+                            numerator += 0.5; tied_risk += 1
+                        elif ri > rj:  # higher risk = correct
+                            numerator += 1; concordant += 1
+                        else:
+                            discordant += 1
+                        denominator += 1
+
+                    elif tj < ti:
+                        if abs(ri - rj) <= tied_tol:
+                            numerator += 0.5; tied_risk += 1
+                        elif rj > ri:
+                            numerator += 1; concordant += 1
+                        else:
+                            discordant += 1
+                        denominator += 1
+
+            cindex = numerator / denominator
+            
+            return cindex, concordant, discordant, tied_risk, tied_time
     
         elif method == "IPCW":
             time_bins = self.time_coordinates
@@ -204,7 +179,6 @@ class DependentEvaluator:
             risks = -1 * predicted_times
             
             tau = max(train_event_times) # truncate
-            tied_tol = 1e-8
             
             if tau is not None:
                 mask = event_times < tau
@@ -231,24 +205,12 @@ class DependentEvaluator:
                                                                                                            risks,
                                                                                                            weights=w,
                                                                                                            tied_tol=tied_tol)
-            
-            #cindex, concordant_pairs, discordant_pairs, risk_ties, time_ties = estimate_concordance_index(event_indicators,
-            #                                                                                              event_times,
-            #                                                                                              risks,
-            #                                                                                              bg_event_time=None,
-            #                                                                                              partial_weights=w,
-            #                                                                                              tied_tol=tied_tol)
         else:
             raise NotImplementedError()
-        
-        #total_pairs = concordant_pairs + discordant_pairs # + risk_ties # Ties = risk
-        #concordant_pairs = concordant_pairs #+ 0.5 * risk_ties
-        #cindex = concordant_pairs / total_pairs
         
         return cindex, concordant_pairs, (concordant_pairs+discordant_pairs)    
         
     def integrated_brier_score(self, method: str, num_points: int):
-        # Dependent IBS using BG/IPCW
         predicted_curves = check_and_convert(self.predicted_curves)
         time_bins = check_and_convert(self.time_coordinates)
 
@@ -328,8 +290,7 @@ class DependentEvaluator:
             weight_cat2[np.isnan(weight_cat2)] = 0
             
         else:
-            weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat)
-            weight_cat2 = (event_times_mat > target_times_mat)
+            raise NotImplementedError()
 
         square_error_mat = np.square(predict_probs_mat) * weight_cat1 + np.square(1 - predict_probs_mat) * weight_cat2
         brier_scores = np.mean(square_error_mat, axis=0)
@@ -347,9 +308,7 @@ class DependentEvaluator:
         return ibs_score
     
     def mae(self, method: str, weighted: bool=True):
-        # Dependent MAE using BG/IPCW
         predicted_times = self.predict_time_from_curve(self.predict_time_method)
-        predicted_curves = check_and_convert(self.predicted_curves)
         time_bins = check_and_convert(self.time_coordinates)
 
         event_times = self.event_times
@@ -391,8 +350,6 @@ class DependentEvaluator:
             errors[event_indicators] = event_times[event_indicators] - predicted_times[event_indicators]
             errors[~event_indicators] = best_guesses - predicted_times[~event_indicators]
             
-            return np.average(error_func(errors), weights=weights)
-        
         elif method == "IPCW": # CG with IPCW-V1 weighting
             best_guesses = np.empty(shape=n_test)
             for i in range(n_test):
@@ -409,4 +366,4 @@ class DependentEvaluator:
             
             errors = best_guesses - predicted_times
             
-            return np.average(error_func(errors), weights=weights)
+        return np.average(error_func(errors), weights=weights)
