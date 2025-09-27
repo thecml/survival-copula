@@ -11,7 +11,6 @@ SIGMA_LEVEL = 1
 def calculate_errors(results, dataset, strategy, model_names, metrics):
     true_metrics = {f"{metric}True": metric for metric in ["CI", "IBS", "MAE"]}
     
-    # Initialize error storage
     mean_errors = {metric: [] for metric in metrics}
     std_errors = {metric: [] for metric in metrics}
 
@@ -25,7 +24,6 @@ def calculate_errors(results, dataset, strategy, model_names, metrics):
             ].values for true_metric in true_metrics
         }
 
-        # Extract predicted metrics
         for metric in metrics:
             predicted_values = results.loc[
                 (results["Dataset"] == dataset) &
@@ -33,26 +31,29 @@ def calculate_errors(results, dataset, strategy, model_names, metrics):
                 (results["ModelName"] == model_name), metric
             ].values
             
-            # Match true metric and calculate errors
             true_metric_key = next((k for k, v in true_metrics.items() if metric.startswith(v)), None)
             if true_metric_key:
                 true_values_for_metric = true_values[true_metric_key]
-                errors = abs(true_values_for_metric - predicted_values)
-                mean_errors[metric].append(np.mean(errors))
-                std_errors[metric].append(SIGMA_LEVEL * np.std(errors))
+
+                # only compute if both are non-empty and same length
+                if len(true_values_for_metric) > 0 and len(predicted_values) > 0:
+                    errors = abs(true_values_for_metric - predicted_values)
+                    mean_errors[metric].append(np.mean(errors))
+                    std_errors[metric].append(SIGMA_LEVEL * np.std(errors))
+                else:
+                    mean_errors[metric].append(np.nan)
+                    std_errors[metric].append(np.nan)
     
     # Aggregate mean/std errors across models
-    mean_errors = {k: np.nanmean(v) for k, v in mean_errors.items()}
-    std_errors = {k: np.nanmean(v) for k, v in std_errors.items()}
+    mean_errors = {k: np.nanmean(v) if len(v) > 0 else np.nan for k, v in mean_errors.items()}
+    std_errors = {k: np.nanmean(v) if len(v) > 0 else np.nan for k, v in std_errors.items()}
 
     return mean_errors, std_errors
 
 if __name__ == "__main__":
     results = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "semisynthetic_results.csv"))
     
-    # All metrics you want to include
     metrics = [
-        "CITrue", "IBSTrue", "MAETrue",
         "CIHarrell", "CIUno",
         "IBSIPCW", "MAEHinge", "MAEMargin",
         "CIIndepBG", "IBSIndepBG", "MAEIndepBG",
@@ -67,38 +68,31 @@ if __name__ == "__main__":
         "seer_liver",
         "seer_stomach",
     ]
-    
     strategies = ["original", "top_5", "top_10", "random_25"]
     model_names = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
-    for idx, dataset in enumerate(datasets):
+    for dataset in datasets:
         n_samples, censoring_rate = get_dataset_info(dataset)
-        print(r"\multirow{4}{*}{\makecell{" + f"{map_dataset_name(dataset)} \\\ ($N$={n_samples}, $C$={censoring_rate}\%)" + r"}}")
+        print(f"\n=== Dataset: {map_dataset_name(dataset)} "
+              f"(N={n_samples}, C={censoring_rate}%) ===")
         
-        for strategy in strategies:
-            mean_errors, std_errors = calculate_errors(results, dataset, strategy, model_names, metrics)
-            
-            data = results.loc[(results['Dataset'] == dataset) & (results['Strategy'] == strategy)]
-            most_common_copula = data['BestCopulaName'].mode()[0]
-            mean_theta = data[data['BestCopulaName'] == most_common_copula]['BestCopulaTheta'].mean()
-            k_tau = round(theta_to_kendall_tau(most_common_copula, mean_theta), 2)
-
-            formatted_errors = {
-                k: f"%.{N_DECIMALS}f" % round(v, N_DECIMALS)
-                for k, v in mean_errors.items()
-            }
-            formatted_std_errors = {
-                k: f"%.{N_DECIMALS}f" % round(v, N_DECIMALS)
-                for k, v in std_errors.items()
-            }
-            
-            text = f"& {map_strategy_name(strategy)}" + \
-                "".join(
-                    f" & {formatted_errors[metric]}$\pm$\\scriptsize" +
-                    r"{" + f"{formatted_std_errors[metric]}" + r"}"
-                    for metric in metrics
-                ) + " \\\\"
-            print(text)
+        # header
+        header = ["Metric"] + [map_strategy_name(s) for s in strategies]
+        print("-" * (18 * (len(strategies) + 1)))
+        print("".join(f"{h:<18}" for h in header))
+        print("-" * (18 * (len(strategies) + 1)))
         
-        if idx != len(datasets) - 1:
-            print(r"\cmidrule(lr){1-1}")
+        # rows: one per metric
+        for metric in metrics:
+            row = [f"{metric:<18}"]
+            for strategy in strategies:
+                mean_errors, std_errors = calculate_errors(results, dataset, strategy, model_names, metrics)
+                mean_val = round(mean_errors[metric], N_DECIMALS)
+                std_val = round(std_errors[metric], N_DECIMALS)
+                if np.isnan(mean_val) or np.isnan(std_val):
+                    row.append("NA")
+                else:
+                    row.append(f"{round(mean_val, N_DECIMALS)} ± {round(std_val, N_DECIMALS)}")
+            print("".join(f"{c:<18}" for c in row))
+        
+        print("-" * (18 * (len(strategies) + 1)))

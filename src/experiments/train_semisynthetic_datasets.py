@@ -255,7 +255,10 @@ if __name__ == "__main__":
         ci_harrell = original_evaluator.concordance()[0]
         predicted_times = original_evaluator.predict_time_from_curve(predict_median_survival_time)
         risks = -1 * predicted_times
-        ci_uno = concordance_index_ipcw(y_train, y_test, risks, tau=y_train['time'].max())[0]
+        try:
+            ci_uno = concordance_index_ipcw(y_train, y_test, risks, tau=y_train['time'].max())[0]
+        except:
+            ci_uno = 0.5
         ibs_ipcw = original_evaluator.integrated_brier_score(num_points=10)
 
         mae_hinge = original_evaluator.mae(method="Hinge")
@@ -279,10 +282,10 @@ if __name__ == "__main__":
 
         # Create results
         result_row = pd.Series([seed, model_name, dataset_name, strategy, best_copula_name, best_copula_theta,
-                                ci_true, ibs_true, mae_true, ci_harrell, ci_uno, ibs_ipcw, mae_hinge, mae_margin,
+                                ci_true, ibs_true, mae_true, ci_harrell, ci_uno, ibs_ipcw, mae_hinge, mae_margin, mae_pseudo,
                                 ci_indep_bg, ibs_indep_bg, mae_indep_bg, ci_dep_bg, ibs_dep_bg, mae_dep_bg],
                                 index=["Seed", "ModelName", "Dataset", "Strategy", "BestCopulaName", "BestCopulaTheta",
-                                       "CITrue", "IBSTrue", "MAETrue", "CIHarrell", "CIUno",  "IBSIPCW", "MAEHinge", "MAEMargin",
+                                       "CITrue", "IBSTrue", "MAETrue", "CIHarrell", "CIUno",  "IBSIPCW", "MAEHinge", "MAEMargin", "MAEPseudo",
                                        "CIIndepBG", "IBSIndepBG", "MAEIndepBG", "CIDepBG", "IBSDepBG", "MAEDepBG"])
         model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
     
