@@ -269,18 +269,6 @@ def make_semi_synth(
         importances_perm = result.importances_mean
         feature_importance_df = pd.DataFrame({"Feature": X.columns, "Importance": importances_perm})
         features = feature_importance_df.sort_values(by="Importance", ascending=False).head(5)['Feature']
-    elif strategy == "top_10":
-        df_all_copy = df_original.copy()
-        X = df_all_copy.drop(['event', 'time'], axis=1)
-        y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
-        config = dotdict(cfg.COXPH_PARAMS)
-        cph_features = make_cox_model(config)
-        cph_features.fit(X, y)
-        result = permutation_importance(cph_features, X, y, n_jobs=-1,
-                                        max_samples=0.25, random_state=0)
-        importances_perm = result.importances_mean
-        feature_importance_df = pd.DataFrame({"Feature": X.columns, "Importance": importances_perm})
-        features = feature_importance_df.sort_values(by="Importance", ascending=False).head(10)['Feature']
     elif strategy == "random_25":
         df_all_copy = df_original.copy()
         all_features = df_all_copy.drop(columns=['time', 'event']).columns
