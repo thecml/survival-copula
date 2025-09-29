@@ -29,6 +29,16 @@ class DependentEvaluator:
         self._predicted_curves = check_and_convert(predicted_survival_curves)
         self._time_coordinates = check_and_convert(time_coordinates)
 
+        if self._time_coordinates.ndim == 1:
+            if self._time_coordinates[0] != 0:
+                warnings.warn("The first time coordinate is not 0. A authentic survival curve should start from 0 "
+                              "with 100% survival probability. Adding 0 to the beginning of the time coordinates and"
+                              " 1 to the beginning of the predicted curves.")
+                # Add 0 to the beginning of the time coordinates, and add the 100% survival probability to the
+                # beginning of the predicted curves.
+                self._time_coordinates = np.insert(self._time_coordinates, 0, 0)
+                self._predicted_curves = np.insert(self._predicted_curves, 0, 1, axis=1)
+
         test_event_times, test_event_indicators = check_and_convert(test_event_times, test_event_indicators)
         self.event_times = test_event_times
         self.event_indicators = test_event_indicators
@@ -105,8 +115,7 @@ class DependentEvaluator:
         alpha = self.alpha
         
         if method == "BG":
-            time_bins = self.time_coordinates
-            cg_model = CopulaGraphicWrapper(time_bins, train_event_times, train_event_indicators,
+            cg_model = CopulaGraphicWrapper(train_event_times, train_event_indicators,
                                             copula_name=copula_name, alpha=alpha)
             
             cg_linear_zero = cg_model.cg_linear_zero
@@ -115,14 +124,25 @@ class DependentEvaluator:
             predicted_times = np.clip(self.predicted_event_times, a_max=cg_linear_zero, a_min=None)
             risks = -1 * predicted_times
             
-            censor_times = event_times[~event_indicators.astype(bool)]
-            partial_weights = np.ones_like(event_indicators, dtype=float)
-            partial_weights[~event_indicators.astype(bool)] = 1 - cg_model.predict(censor_times)
-            
             # Impute censored cases with CG best guesses
             event_times_bg = event_times.copy()
             cens_mask = (event_indicators == 0)
             event_times_bg[cens_mask] = cg_model.best_guess(event_times[cens_mask])
+            
+            # Calculate weights
+            partial_weights = np.ones_like(event_indicators, dtype=float)
+            use_cg_weights = True  
+            
+            if use_cg_weights:  
+                # KM/CG-based weights
+                censor_times = event_times[cens_mask]
+                partial_weights[cens_mask] = 1 - cg_model.predict(censor_times)
+            else:  
+                # Distance-based weights
+                distance = event_times_bg[cens_mask] - event_times[cens_mask] 
+                t_max = event_times.max()
+                partial_weights[cens_mask] = 1 - (distance / t_max)
+                partial_weights[cens_mask] = np.clip(partial_weights[cens_mask], 0.0, 1.0)
 
             n = len(event_times)
             numerator = denominator = 0.0
@@ -139,7 +159,8 @@ class DependentEvaluator:
 
                     ti, tj = event_times_bg[i], event_times_bg[j]
                     ri, rj = risks[i], risks[j]
-
+                    wi, wj = partial_weights[i], partial_weights[j]
+                    
                     if ti == tj:
                         continue  # not comparable
 
@@ -148,21 +169,25 @@ class DependentEvaluator:
                     # earlier time = "event" for the pair
                     if ti < tj:
                         if abs(ri - rj) <= tied_tol:
-                            numerator += 0.5; tied_risk += 1
-                        elif ri > rj:  # higher risk = correct
-                            numerator += 1; concordant += 1
+                            numerator += 0.5 * wi
+                            tied_risk += 1
+                        elif ri > rj:
+                            numerator += 1 * wi
+                            concordant += 1
                         else:
                             discordant += 1
-                        denominator += 1
+                        denominator += 1 * wi
 
                     elif tj < ti:
                         if abs(ri - rj) <= tied_tol:
-                            numerator += 0.5; tied_risk += 1
+                            numerator += 0.5 * wj
+                            tied_risk += 1
                         elif rj > ri:
-                            numerator += 1; concordant += 1
+                            numerator += 1 * wj
+                            concordant += 1
                         else:
                             discordant += 1
-                        denominator += 1
+                        denominator += 1 * wj
 
             cindex = numerator / denominator
             
@@ -170,7 +195,7 @@ class DependentEvaluator:
     
         elif method == "IPCW":
             time_bins = self.time_coordinates
-            cg_model_event = CopulaGraphicWrapper(time_bins, train_event_times, train_event_indicators,
+            cg_model_event = CopulaGraphicWrapper(train_event_times, train_event_indicators,
                                                   copula_name=copula_name, alpha=alpha)
             cg_linear_zero = cg_model_event.cg_linear_zero
             if np.isinf(cg_linear_zero):
@@ -186,7 +211,7 @@ class DependentEvaluator:
             
             inverse_train_event_indicators = 1 - train_event_indicators
             time_bins = self.time_coordinates
-            cg_model_censor = CopulaGraphicWrapper(time_bins, train_event_times, inverse_train_event_indicators,
+            cg_model_censor = CopulaGraphicWrapper(train_event_times, inverse_train_event_indicators,
                                                    copula_name=copula_name, alpha=alpha)
             ipcw_test = cg_model_censor.predict(event_times_mask)
             
@@ -240,7 +265,7 @@ class DependentEvaluator:
         if method == "BG":
             censored_times = event_times[event_indicators == 0]
             time_bins = self.time_coordinates
-            cg_model = CopulaGraphicWrapper(time_bins, train_event_times, train_event_indicators,
+            cg_model = CopulaGraphicWrapper(train_event_times, train_event_indicators,
                                             copula_name=copula_name, alpha=alpha)
 
             censored_times_bg = cg_model.best_guess(censored_times)
@@ -268,7 +293,7 @@ class DependentEvaluator:
             #ipc_model = CopulaGraphic(train_event_times, inverse_train_event_indicators,
             #                          copula_name=copula_name, alpha=alpha)
             time_bins = self.time_coordinates
-            ipc_model = CopulaGraphicWrapper(time_bins, train_event_times, inverse_train_event_indicators,
+            ipc_model = CopulaGraphicWrapper(train_event_times, inverse_train_event_indicators,
                                              copula_name=copula_name, alpha=alpha)
 
             # Category one calculates IPCW weight at observed time point.
@@ -326,7 +351,7 @@ class DependentEvaluator:
         # Calculate the weighting for each sample
         if method in ["BG", "IPCW"]:
             time_bins = self.time_coordinates
-            cg_model = CopulaGraphicWrapper(time_bins, train_event_times, train_event_indicators,
+            cg_model = CopulaGraphicWrapper(train_event_times, train_event_indicators,
                                             copula_name=copula_name, alpha=alpha)
             cg_linear_zero = cg_model.cg_linear_zero
             if np.isinf(cg_linear_zero):
@@ -347,6 +372,7 @@ class DependentEvaluator:
             best_guesses[censor_times > cg_linear_zero] = censor_times[censor_times > cg_linear_zero]
             
             errors = np.empty(predicted_times.size)
+            
             errors[event_indicators] = event_times[event_indicators] - predicted_times[event_indicators]
             errors[~event_indicators] = best_guesses - predicted_times[~event_indicators]
             

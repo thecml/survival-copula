@@ -117,19 +117,21 @@ class CopulaGraphicWrapper():
     """
     Wrapper class of the CopulaGraphic estimator that implements the best_guess() function.
     """
-    def __init__(self, time_bins, event_times, event_indicators,
+    def __init__(self, event_times, event_indicators,
                  copula_name="clayton", alpha=0) -> None:
         self.cg_estimator = CopulaGraphic(
             event_times, event_indicators, alpha=alpha, type=copula_name
         )
         
-        self.survival_probabilities = self.cg_estimator.predict(time_bins)
-        self.survival_times = time_bins
+        index = np.lexsort((event_indicators, event_times))
+        unique_times = np.unique(event_times[index], return_counts=True)
+        self.survival_times = unique_times[0]
         
-        self.survival_probabilities[0] = 1
-        area_probabilities = self.survival_probabilities
-        area_times = self.survival_times
+        self.survival_probabilities = self.cg_estimator.predict(self.survival_times)
+        self.survival_probabilities[-1] = 0
         
+        area_probabilities = np.append(1, self.survival_probabilities)
+        area_times = np.append(0, self.survival_times)
         self.cg_linear_zero = -1 / ((area_probabilities[-1] - 1) / area_times[-1])
         if self.survival_probabilities[-1] != 0:
             area_times = np.append(area_times, self.cg_linear_zero)
@@ -159,10 +161,7 @@ class CopulaGraphicWrapper():
 
         surv_prob = np.clip(surv_prob, a_min=1e-10, a_max=None)
 
-        censor_indexes = np.digitize(
-            np.asarray(censor_times, dtype=float),
-            np.asarray(self.area_times, dtype=float)
-        )
+        censor_indexes = np.digitize(censor_times, self.area_times)
         censor_indexes = np.where(
             censor_indexes == self.area_times.size + 1,
             censor_indexes - 1,

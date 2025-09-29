@@ -119,8 +119,8 @@ if __name__ == "__main__":
                     # Calculate dependent metrics
                     theta = kendall_tau_to_theta(copula_name, k_tau)
                     dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                                        data_train.time.values, data_train.event.values, copula_name=copula_name,
-                                                        alpha=theta)
+                                                       data_train.time.values, data_train.event.values, copula_name=copula_name,
+                                                       alpha=theta)
                     ci_dep_bg = dep_evaluator.concordance(method="BG")[0]
                     ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
                     mae_dep_bg = dep_evaluator.mae(method="BG")
@@ -138,7 +138,7 @@ if __name__ == "__main__":
                     results_dict[(seed, copula_name, k_tau, n_samples, n_features)] = {
                         "ci_harrell_error": ci_harrell_error,
                         "ci_uno_error": ci_uno_error,
-                        "ci_dep_error": ci_dep_error,
+                        "ci_dep_bg_error": ci_dep_error,
                         "ibs_ipcw_error": ibs_ipcw_error,
                         "ibs_dep_bg_error": ibs_dep_bg_error,
                         "mae_margin_error": mae_margin_error,
