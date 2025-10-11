@@ -110,7 +110,7 @@ def train_copula_model(model1, model2, train_data, val_data,
             else:
                 val_stop_itr += 1
 
-        # --- Theta-based stagnation check ---
+        # Early stopping
         if copula is not None:
             theta_val = copula.theta.detach().cpu().item()
             

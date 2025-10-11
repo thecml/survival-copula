@@ -102,47 +102,51 @@ if __name__ == "__main__":
             
                     # Create true evaluator to calculate true metrics
                     true_evaluator = SurvivalEvaluator(survival_outputs, time_bins, true_test_time, true_test_event)
-                    ci_true = true_evaluator.concordance()[0]
                     ibs_true = true_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
-                    mae_true = true_evaluator.mae(method="Uncensored")
-            
-                    # Calculate censored metrics
-                    censored_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                                           data_train.time.values, data_train.event.values)
-                    ci_harrell = censored_evaluator.concordance()[0]
-                    predicted_times = censored_evaluator.predict_time_from_curve(predict_median_survival_time)
-                    risks = -1 * predicted_times
-                    ci_uno = concordance_index_ipcw(y_train, y_test, risks, tau=y_train['time'].max())[0]
-                    ibs_ipcw = censored_evaluator.integrated_brier_score(num_points=10)
-                    mae_margin = censored_evaluator.mae(method="Margin", weighted=True)
                     
+                    # Calculate uncensored IBS
+                    uncensored_mask = data_test.event.values == 1
+                    data_test_uncens = data_test[uncensored_mask]
+                    uncens_evaluator = SurvivalEvaluator(survival_outputs[uncensored_mask], time_bins,
+                                                        data_test_uncens.time.values, data_test_uncens.event.values,
+                                                        data_train.time.values, data_train.event.values)
+                    ibs_uncens = uncens_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
+                        
+                    # Calculate IBS-IPCW
+                    original_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
+                                                        data_train.time.values, data_train.event.values)
+                    ibs_ipcw = original_evaluator.integrated_brier_score(num_points=10)
+
+                    # Calculate independent metrics
+                    indep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
+                                                        data_train.time.values, data_train.event.values, copula_name="clayton", alpha=0)
+                    ibs_indep_bg = indep_evaluator.integrated_brier_score(method="BG", num_points=10)
+                    ibs_indep_bguw = indep_evaluator.integrated_brier_score(method="BG_UW", num_points=10)
+
                     # Calculate dependent metrics
                     theta = kendall_tau_to_theta(copula_name, k_tau)
                     dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                                       data_train.time.values, data_train.event.values, copula_name=copula_name,
-                                                       alpha=theta)
-                    ci_dep_bg = dep_evaluator.concordance(method="BG")[0]
+                                                    data_train.time.values, data_train.event.values, copula_name=copula_name,
+                                                    alpha=theta)
                     ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
-                    mae_dep_bg = dep_evaluator.mae(method="BG")
+                    ibs_dep_bguw = dep_evaluator.integrated_brier_score(method="BG_UW", num_points=10)
                             
                     # Calculate errors
-                    ci_harrell_error = abs(ci_true - ci_harrell)
-                    ci_uno_error = abs(ci_true - ci_uno)
-                    ci_dep_error = abs(ci_true - ci_dep_bg)
+                    ibs_uncens_error = abs(ibs_true - ibs_uncens)
                     ibs_ipcw_error = abs(ibs_true - ibs_ipcw)
+                    ibs_indep_bg_error = abs(ibs_true - ibs_indep_bg)
+                    ibs_indep_bguw_error = abs(ibs_true - ibs_indep_bguw)
                     ibs_dep_bg_error = abs(ibs_true - ibs_dep_bg)
-                    mae_margin_error = abs(mae_true - mae_margin)
-                    mae_dep_bg_error = abs(mae_true - mae_dep_bg)
+                    ibs_dep_bguw_error = abs(ibs_true - ibs_dep_bguw)
                     
                     # Store results in the dictionary
                     results_dict[(seed, copula_name, k_tau, n_samples, n_features)] = {
-                        "ci_harrell_error": ci_harrell_error,
-                        "ci_uno_error": ci_uno_error,
-                        "ci_dep_bg_error": ci_dep_error,
+                        "ibs_uncens_error": ibs_uncens_error,
                         "ibs_ipcw_error": ibs_ipcw_error,
+                        "ibs_indep_bg_error": ibs_indep_bg_error,
+                        "ibs_indep_bguw_error": ibs_indep_bguw_error,
                         "ibs_dep_bg_error": ibs_dep_bg_error,
-                        "mae_margin_error": mae_margin_error,
-                        "mae_dep_bg_error": mae_dep_bg_error,
+                        "ibs_dep_bguw_error": ibs_dep_bguw_error
                     }
                     
     # Flatten the nested dictionary into a list of rows

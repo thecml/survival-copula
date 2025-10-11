@@ -68,7 +68,7 @@ if __name__ == "__main__":
         "seer_liver",
         "seer_stomach",
     ]
-    strategies = ["original", "top_5", "top_10", "random_25"]
+    strategies = ["original", "top_5", "random_25"]
     model_names = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
     for dataset in datasets:

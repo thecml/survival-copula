@@ -8,15 +8,20 @@ if [[ -z "$base_path" ]] ; then  # error; for some reason, the path is not acces
 fi
 echo "$base_path"
 
-results_path=$base_path/../results/semisynthetic_results.csv
-if [ -f "$results_path" ]; then
-  rm $results_path
+results_path="$base_path/../results"
+if [ -d "$results_path" ]; then
+  rm -f "$results_path"/*.csv
 fi
 
+# Synthetic datasets
+python3 $base_path/../src/experiments/train_synthetic_censoring.py
+python3 $base_path/../src/experiments/train_synthetic_correct_copula.py
+python3 $base_path/../src/experiments/train_synthetic_wrong_copula.py
+
+# Semi-synthetic datasets
 seeds=({0..9})
 dataset_names=("metabric" "mimic_all" "mimic_hospital" "seer_brain" "seer_liver" "seer_stomach")
 strategies=('original' 'top_1' 'top_5' 'top_10' 'random_25')
-
 for seed in "${seeds[@]}"; do
     for dataset_name in "${dataset_names[@]}"; do
         for strategy in "${strategies[@]}"; do

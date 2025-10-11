@@ -4,7 +4,7 @@ import warnings
 from functools import cached_property
 
 from scipy.integrate import trapezoid
-from estimators import CopulaGraphicWrapper
+from estimators import CopulaGraphic, CopulaGraphicWrapper
 from utility.metrics import estimate_concordance_index
 
 from utility.metrics import estimate_concordance_index, predict_multi_probabilities_from_curve
@@ -280,40 +280,57 @@ class DependentEvaluator:
 
             weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat)
             weight_cat2 = (event_times_mat > target_times_mat)
-            
-        elif method == "IPCW":
+        elif method == "BG_UW":
+            censored_mask = (event_indicators == 0)
+            censored_times = event_times[censored_mask]
+
+            # Event survival estimator (same object you already use to get BG)
+            cg_model = CopulaGraphicWrapper(train_event_times, train_event_indicators,
+                                            copula_name=copula_name, alpha=alpha)
+
+            # 1) Best-guess imputation (as in BG)
+            censored_times_bg = cg_model.best_guess(censored_times)
+            event_times_bg = event_times.copy()
+            event_times_bg[censored_mask] = censored_times_bg
+
+            # 2) Build matrices for IBS calculation (same as BG except all "events")
             target_times_mat = np.repeat(time_points.reshape(1, -1), repeats=len(event_times), axis=0)
-            event_times_mat = np.repeat(event_times.reshape(-1, 1), repeats=len(time_points), axis=1)
-            event_indicators_mat = np.repeat(event_indicators.reshape(-1, 1), repeats=len(time_points), axis=1)
-            event_indicators_mat = event_indicators_mat.astype(bool)
+            event_times_mat  = np.repeat(event_times_bg.reshape(-1, 1), repeats=len(time_points), axis=1)
+            event_indicators_mat = np.ones_like(event_times_mat, dtype=bool)  # treat as uncensored after BG
 
-            inverse_train_event_indicators = 1 - train_event_indicators
+            # 3) Vanilla BG weights
+            weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat)
+            weight_cat2 = (event_times_mat > target_times_mat)
 
-            # Use the CG estimator for IPCW
-            #ipc_model = CopulaGraphic(train_event_times, inverse_train_event_indicators,
-            #                          copula_name=copula_name, alpha=alpha)
-            time_bins = self.time_coordinates
-            ipc_model = CopulaGraphicWrapper(train_event_times, inverse_train_event_indicators,
-                                             copula_name=copula_name, alpha=alpha)
+            # Query S_hat at each censoring time c_i
+            if censored_times.size > 0:
+                # Build CG estimator for the censoring distribution
+                cg_model_uncert = CopulaGraphic(train_event_times, train_event_indicators,
+                                                alpha=alpha, type=copula_name)
 
-            # Category one calculates IPCW weight at observed time point.
-            # Category one is individuals with event time lower than the time of interest and were NOT censored.
-            ipc_pred = ipc_model.predict(event_times_mat)
-            # Catch if denominator is 0.
-            ipc_pred[ipc_pred == 0] = np.inf
-            weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat) / ipc_pred
-            # Catch if event times goes over max training event time, i.e. predict gives NA
-            weight_cat1[np.isnan(weight_cat1)] = 0
-            # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
-            # contain both censored and uncensored individuals.
-            ipc_target_pred = ipc_model.predict(target_times_mat)
-            # Catch if denominator is 0.
-            ipc_target_pred[ipc_target_pred == 0] = np.inf
-            weight_cat2 = (event_times_mat > target_times_mat) / ipc_target_pred
-            # predict returns NA if the passed in time is greater than any of the times used to build
-            # the inverse probability of censoring model.
-            weight_cat2[np.isnan(weight_cat2)] = 0
-            
+                # Predict survival at each censoring time
+                S_c = cg_model_uncert.predict(censored_times)
+                F_c = 1.0 - S_c
+
+                gamma = 1.0  # tune 0.5..2.0; higher gamma -> stronger down-weighting for early censoring
+                w_c = np.clip(F_c, 0.0, 1.0) ** gamma
+            else:
+                w_c = np.array([])
+
+            # Build a per-row weight vector w_row: 1 for uncensored; w_c for censored rows.
+            w_row = np.ones(len(event_times), dtype=float)
+            if w_c.size > 0:
+                w_row[censored_mask] = w_c
+
+            # Optional: rescale so average row-weight = 1 (keeps IBS scale comparable to BG)
+            w_row /= (w_row.mean() + 1e-12)
+
+            # Expand to (n_samples, n_time_points)
+            w_mat = np.repeat(w_row.reshape(-1, 1), repeats=len(time_points), axis=1)
+
+            # 5) Apply the uncertainty weights multiplicatively to both BG categories
+            weight_cat1 = weight_cat1 * w_mat
+            weight_cat2 = weight_cat2 * w_mat
         else:
             raise NotImplementedError()
 

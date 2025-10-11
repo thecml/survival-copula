@@ -257,6 +257,18 @@ def make_semi_synth(
     
     if strategy == "original":
         features = df_original.drop(columns=["time", "event"]).columns.tolist()
+    elif strategy == "top_1":
+        df_all_copy = df_original.copy()
+        X = df_all_copy.drop(['event', 'time'], axis=1)
+        y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
+        config = dotdict(cfg.COXPH_PARAMS)
+        cph_features = make_cox_model(config)
+        cph_features.fit(X, y)
+        result = permutation_importance(cph_features, X, y, n_jobs=-1,
+                                        max_samples=0.25, random_state=0)
+        importances_perm = result.importances_mean
+        feature_importance_df = pd.DataFrame({"Feature": X.columns, "Importance": importances_perm})
+        features = feature_importance_df.sort_values(by="Importance", ascending=False).head(1)['Feature']
     elif strategy == "top_5":
         df_all_copy = df_original.copy()
         X = df_all_copy.drop(['event', 'time'], axis=1)
@@ -269,6 +281,18 @@ def make_semi_synth(
         importances_perm = result.importances_mean
         feature_importance_df = pd.DataFrame({"Feature": X.columns, "Importance": importances_perm})
         features = feature_importance_df.sort_values(by="Importance", ascending=False).head(5)['Feature']
+    elif strategy == "top_10":
+        df_all_copy = df_original.copy()
+        X = df_all_copy.drop(['event', 'time'], axis=1)
+        y = convert_to_structured(df_all_copy['time'], df_all_copy['event'])
+        config = dotdict(cfg.COXPH_PARAMS)
+        cph_features = make_cox_model(config)
+        cph_features.fit(X, y)
+        result = permutation_importance(cph_features, X, y, n_jobs=-1,
+                                        max_samples=0.25, random_state=0)
+        importances_perm = result.importances_mean
+        feature_importance_df = pd.DataFrame({"Feature": X.columns, "Importance": importances_perm})
+        features = feature_importance_df.sort_values(by="Importance", ascending=False).head(10)['Feature']
     elif strategy == "random_25":
         df_all_copy = df_original.copy()
         all_features = df_all_copy.drop(columns=['time', 'event']).columns
@@ -312,24 +336,3 @@ def make_semi_synth(
     df.reset_index(drop=True, inplace=True)
     
     return df
-
-if __name__ == "__main__":
-    # Load data
-    dl = MetabricDataLoader().load_data()
-    num_features, cat_features = dl.get_features()
-    df_full = dl.get_data()
-    
-    # Drop censored rows
-    df = df_full.drop(df_full[df_full.event == 0].index)
-    df.reset_index(drop=True, inplace=True)
-    df.time = df.time.round().astype(int)
-    
-    # Make synthetic censoring time
-    strategy = "feature_importance" # original, best, feature_importance
-    censor_times = make_synthetic_censoring(strategy, df, df_full)
-    censor_times = np.round(censor_times).astype(int)
-    
-    # Combine truth and censored data
-    df = combine_data_with_censor(df, censor_times)
-    compare_km_curves(df_full, df, show=True)
-    

@@ -44,7 +44,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--dataset_name', type=str, default='seer_stomach')
+    parser.add_argument('--dataset_name', type=str, default='metabric')
     parser.add_argument('--strategy', type=str, default='original')
     
     args = parser.parse_args()
@@ -85,7 +85,7 @@ if __name__ == "__main__":
                                                         frac_valid=0.1, frac_test=0.2,
                                                         random_state=seed)
     
-    # Adjust types
+    # Fix types
     df_train, df_valid, df_test = fix_types(df_train, df_valid, df_test)
   
     # Process data
@@ -243,50 +243,41 @@ if __name__ == "__main__":
         survival_outputs = pd.DataFrame(survival_outputs, columns=time_bins.cpu().numpy())
         survival_outputs[0] = 1
         
-        # Create true evaluator to calculate true metrics
+        # Create true evaluator to calculate true IBS
         true_evaluator = SurvivalEvaluator(survival_outputs, time_bins, true_test_time, true_test_event)
-        ci_true = true_evaluator.concordance()[0]
         ibs_true = true_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
-        mae_true = true_evaluator.mae(method="Uncensored")
         
-        # Calculate original metrics
+        # Calculate uncensored IBS
+        uncensored_mask = data_test.event.values == 1
+        data_test_uncens = data_test[uncensored_mask]
+        uncens_evaluator = SurvivalEvaluator(survival_outputs[uncensored_mask], time_bins,
+                                             data_test_uncens.time.values, data_test_uncens.event.values,
+                                             data_train.time.values, data_train.event.values)
+        ibs_uncens = uncens_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
+        
+        # Calculate IBS-IPCW
         original_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                                data_train.time.values, data_train.event.values)
-        ci_harrell = original_evaluator.concordance()[0]
-        predicted_times = original_evaluator.predict_time_from_curve(predict_median_survival_time)
-        risks = -1 * predicted_times
-        try:
-            ci_uno = concordance_index_ipcw(y_train, y_test, risks, tau=y_train['time'].max())[0]
-        except:
-            ci_uno = 0.5
         ibs_ipcw = original_evaluator.integrated_brier_score(num_points=10)
 
-        mae_hinge = original_evaluator.mae(method="Hinge")
-        mae_margin = original_evaluator.mae(method="Margin", weighted=True)
-        mae_pseudo = original_evaluator.mae(method="Pseudo_obs", weighted=True)
-        
         # Calculate independent metrics
         indep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                              data_train.time.values, data_train.event.values, copula_name="clayton", alpha=0)
-        ci_indep_bg = indep_evaluator.concordance(method="BG")[0]
         ibs_indep_bg = indep_evaluator.integrated_brier_score(method="BG", num_points=10)
-        mae_indep_bg = indep_evaluator.mae(method="BG")
+        ibs_indep_bguw = indep_evaluator.integrated_brier_score(method="BG_UW", num_points=10)
 
         # Calculate dependent metrics
         dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                            data_train.time.values, data_train.event.values, copula_name=best_copula_name,
                                            alpha=best_copula_theta)
-        ci_dep_bg = dep_evaluator.concordance(method="BG")[0]
         ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
-        mae_dep_bg = dep_evaluator.mae(method="BG")
-
+        ibs_dep_bguw = dep_evaluator.integrated_brier_score(method="BG_UW", num_points=10)
+        
         # Create results
         result_row = pd.Series([seed, model_name, dataset_name, strategy, best_copula_name, best_copula_theta,
-                                ci_true, ibs_true, mae_true, ci_harrell, ci_uno, ibs_ipcw, mae_hinge, mae_margin, mae_pseudo,
-                                ci_indep_bg, ibs_indep_bg, mae_indep_bg, ci_dep_bg, ibs_dep_bg, mae_dep_bg],
+                                ibs_true, ibs_uncens, ibs_ipcw, ibs_indep_bg, ibs_indep_bguw, ibs_dep_bg, ibs_dep_bguw],
                                 index=["Seed", "ModelName", "Dataset", "Strategy", "BestCopulaName", "BestCopulaTheta",
-                                       "CITrue", "IBSTrue", "MAETrue", "CIHarrell", "CIUno",  "IBSIPCW", "MAEHinge", "MAEMargin", "MAEPseudo",
-                                       "CIIndepBG", "IBSIndepBG", "MAEIndepBG", "CIDepBG", "IBSDepBG", "MAEDepBG"])
+                                       "IBSTrue", "IBSUncensored", "IBSIPCW", "IBSIndepBG", "IBSIndepBGUW", "IBSDepBG", "IBSDepBGUW"])
         model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
     
         # Save results
