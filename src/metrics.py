@@ -292,7 +292,7 @@ class DependentEvaluator:
             censored_times_bg = cg_model.best_guess(censored_times)
             event_times_bg = event_times.copy()
             event_times_bg[censored_mask] = censored_times_bg
-
+    
             # 2) Build matrices for IBS calculation (same as BG except all "events")
             target_times_mat = np.repeat(time_points.reshape(1, -1), repeats=len(event_times), axis=0)
             event_times_mat  = np.repeat(event_times_bg.reshape(-1, 1), repeats=len(time_points), axis=1)
@@ -309,8 +309,8 @@ class DependentEvaluator:
                                                 alpha=alpha, type=copula_name)
 
                 # Predict survival at each censoring time
-                S_c = cg_model_uncert.predict(censored_times)
-                F_c = 1.0 - S_c
+                S_e = cg_model_uncert.predict(censored_times)
+                F_c = 1.0 - S_e
 
                 gamma = 1.0  # tune 0.5..2.0; higher gamma -> stronger down-weighting for early censoring
                 w_c = np.clip(F_c, 0.0, 1.0) ** gamma
