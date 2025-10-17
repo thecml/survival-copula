@@ -70,7 +70,7 @@ def train_copula_model(model1, model2, train_data, val_data,
             loss = loss_function(model1, model2, batch_data, copula)
 
             if torch.isnan(loss).any():
-                print(f"NaN detected in training loss at epoch {epoch}. Stopping training.")
+                print(f"NaN detected in training loss at epoch {epoch}. Skipping batch.")
                 break
 
             loss.backward()

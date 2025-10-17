@@ -60,7 +60,7 @@ def calculate_errors(results, dataset, strategy, model_names, metrics,
 if __name__ == "__main__":
     results = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "semisynthetic_results.csv"))
     
-    metrics = ["IBSUncensored", "IBSIPCW", "IBSIndepBGUW", "IBSDepBG", "IBSDepBGUW"]
+    metrics = ["IBSUncensored", "IBSIPCW", "IBSIndepBG", "IBSIndepBGUW", "IBSDepBG", "IBSDepBGUW"]
     
     datasets = [
         "metabric",

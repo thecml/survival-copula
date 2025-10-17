@@ -324,6 +324,7 @@ def make_semi_synth(
 
     times = np.minimum(e, c)
     delta = e < c  # event indicator, 1 if event occurred, 0 if censored
+    
     # Create a DataFrame with the sampled times and event indicators
     df = pd.DataFrame({
         "time": times,
@@ -332,6 +333,17 @@ def make_semi_synth(
         "true_censor": c,
         **{f"{feature}": df_original[feature].values for feature in features}
     })
+    
+    # Replace invalid or negative times
+    df["time"] = np.where(df["time"] <= 0, 1, df["time"])
+    df["time"] = np.where(~np.isfinite(df["time"]), np.nan, df["time"])
+    
+    # Drop any rows that still have NaN times
+    df = df.dropna(subset=["time"]).reset_index(drop=True)
+    
+    # Clip extremely large times to avoid outliers
+    df["time"] = np.clip(df["time"], a_min=1, a_max=np.percentile(df["time"], 99.9))
+    
     df = df[df.time != 0]  # Drop all patients with censor time 0
     df.reset_index(drop=True, inplace=True)
     

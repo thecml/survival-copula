@@ -3,29 +3,23 @@ import os
 import random
 import torch
 from copula import Clayton_Bivariate, Frank_Bivariate
-from data_loader import SingleEventSyntheticDataLoader, get_data_loader
+from data_loader import get_data_loader
 import pandas as pd
 import numpy as np
 import config as cfg
-from mensa.model import MENSA
 from metrics import DependentEvaluator
 from sota.deepsurv import DeepSurv, make_deepsurv_prediction, train_deepsurv_model
 from sota.mtlr import make_mtlr_prediction, mtlr, train_mtlr_model
-from sota.sksurv import make_cox_model, make_gbsa_model, make_rsf_model, make_weibull_aft_model
+from sota.sksurv import make_cox_model, make_gbsa_model, make_rsf_model
 from utility.data import dotdict, subsample_dataset, fix_types
 from SurvivalEVAL import SurvivalEvaluator
-from SurvivalEVAL.Evaluations.util import predict_median_survival_time
 from scipy.interpolate import interp1d
 
-from models import Weibull_log_linear, Weibull_model
-from strategies import combine_data_with_censor, make_semi_synth, make_synthetic_censoring
+from models import Weibull_model
+from strategies import make_semi_synth
 from utility.preprocessor import Preprocessor
 from utility.survival import convert_to_structured, make_stratified_split, make_time_bins
 from trainer import train_copula_model
-
-from sksurv.linear_model import CoxPHSurvivalAnalysis
-from sksurv.ensemble import GradientBoostingSurvivalAnalysis, RandomSurvivalForest
-from sksurv.metrics import concordance_index_ipcw
 
 import time
 
@@ -69,8 +63,8 @@ if __name__ == "__main__":
     df_synth = make_semi_synth(df_full, strategy=strategy)
     
     # Subsample
-    if dataset_name == "metabric":
-        df_subsample = subsample_dataset(df_synth.copy(), dataset_name)
+    if dataset_name in ["metabric", "support", "nacd", "aids", "whas", "gbsg"]:
+        df_subsample = df_synth
     elif dataset_name == "mimic_all":
         df_subsample = subsample_dataset(df_synth.copy(), dataset_name, target_size=10000)
     elif dataset_name == "mimic_hospital":

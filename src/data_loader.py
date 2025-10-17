@@ -314,6 +314,7 @@ class AidsDataLoader(BaseDataLoader):
         self.y = convert_to_structured(y['time'], y['censor'])
         self.num_features = ['age', 'cd4', 'karnof', 'priorzdv']
         self.cat_features = ['hemophil', 'ivdrug', 'raceth', 'sex', 'strat2', 'tx', 'txgrp']
+        
         return self
     
     def split_data(self,

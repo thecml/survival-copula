@@ -20,7 +20,7 @@ python3 $base_path/../src/experiments/train_synthetic_wrong_copula.py
 
 # Semi-synthetic datasets
 seeds=({0..9})
-dataset_names=("metabric" "mimic_all" "mimic_hospital" "seer_brain" "seer_liver" "seer_stomach")
+dataset_names=("metabric" "gbsg" "nacd" "support" "whas" "aids" "mimic_all" "seer_brain" "seer_liver" "seer_stomach")
 strategies=('original' 'top_1' 'top_5' 'top_10' 'random_25')
 for seed in "${seeds[@]}"; do
     for dataset_name in "${dataset_names[@]}"; do
