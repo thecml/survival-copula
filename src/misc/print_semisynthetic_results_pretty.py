@@ -8,57 +8,59 @@ from utility.survival import theta_to_kendall_tau
 N_DECIMALS = 3
 SIGMA_LEVEL = 1
                 
-def calculate_errors(results, dataset, strategy, model_names, metrics):
-    true_metrics = {f"{metric}True": metric for metric in ["CI", "IBS", "MAE"]}
-    
-    mean_errors = {metric: [] for metric in metrics}
-    std_errors = {metric: [] for metric in metrics}
+def calculate_errors(results, dataset, strategy, model_names, metrics,
+                     true_col="IBSTrue", abs_error=True, per_model_avg=True):
+    # filter once for dataset+strategy
+    mask = (results["Dataset"] == dataset) & (results["Strategy"] == strategy)
+    df = results.loc[mask].copy()
+    if df.shape[0] == 0:
+        return ({m: np.nan for m in metrics}, {m: np.nan for m in metrics})
 
-    for model_name in model_names:
-        # Extract true metrics
-        true_values = {
-            true_metric: results.loc[
-                (results["Dataset"] == dataset) &
-                (results["Strategy"] == strategy) &
-                (results["ModelName"] == model_name), true_metric
-            ].values for true_metric in true_metrics
-        }
+    mean_errors = {}
+    std_errors = {}
 
-        for metric in metrics:
-            predicted_values = results.loc[
-                (results["Dataset"] == dataset) &
-                (results["Strategy"] == strategy) &
-                (results["ModelName"] == model_name), metric
-            ].values
-            
-            true_metric_key = next((k for k, v in true_metrics.items() if metric.startswith(v)), None)
-            if true_metric_key:
-                true_values_for_metric = true_values[true_metric_key]
+    for metric in metrics:
+        if metric not in df.columns or true_col not in df.columns:
+            mean_errors[metric] = np.nan
+            std_errors[metric] = np.nan
+            continue
 
-                # only compute if both are non-empty and same length
-                if len(true_values_for_metric) > 0 and len(predicted_values) > 0:
-                    errors = abs(true_values_for_metric - predicted_values)
-                    mean_errors[metric].append(np.mean(errors))
-                    std_errors[metric].append(SIGMA_LEVEL * np.std(errors))
-                else:
-                    mean_errors[metric].append(np.nan)
-                    std_errors[metric].append(np.nan)
-    
-    # Aggregate mean/std errors across models
-    mean_errors = {k: np.nanmean(v) if len(v) > 0 else np.nan for k, v in mean_errors.items()}
-    std_errors = {k: np.nanmean(v) if len(v) > 0 else np.nan for k, v in std_errors.items()}
+        # keep only rows where both metric and true_col are non-null
+        sub = df.loc[df[metric].notnull() & df[true_col].notnull(),
+                     ["ModelName", metric, true_col]]
+        if sub.shape[0] == 0:
+            mean_errors[metric] = np.nan
+            std_errors[metric] = np.nan
+            continue
+
+        # compute per-row differences
+        diffs = (sub[true_col] - sub[metric]).values
+        if abs_error:
+            diffs = np.abs(diffs)
+
+        if per_model_avg:
+            # compute mean error per model, then average across the requested model_names
+            per_model = sub.groupby("ModelName").apply(lambda g: np.mean(np.abs(g[true_col] - g[metric])
+                                                                         if abs_error else (g[true_col] - g[metric])))
+            # select only models in model_names (if present)
+            per_model = per_model.reindex(model_names).dropna()
+            if per_model.shape[0] == 0:
+                mean_errors[metric] = np.nan
+                std_errors[metric] = np.nan
+            else:
+                mean_errors[metric] = float(per_model.mean())
+                std_errors[metric] = float(per_model.std(ddof=0))
+        else:
+            # pooled across all rows
+            mean_errors[metric] = float(np.mean(diffs))
+            std_errors[metric] = float(np.std(diffs, ddof=0))
 
     return mean_errors, std_errors
 
 if __name__ == "__main__":
     results = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "semisynthetic_results.csv"))
     
-    metrics = [
-        "CIHarrell", "CIUno",
-        "IBSIPCW", "MAEHinge", "MAEMargin",
-        "CIIndepBG", "IBSIndepBG", "MAEIndepBG",
-        "CIDepBG", "IBSDepBG", "MAEDepBG",
-    ]
+    metrics = ["IBSUncensored", "IBSIPCW", "IBSIndepBGUW", "IBSDepBG", "IBSDepBGUW"]
     
     datasets = [
         "metabric",
@@ -68,7 +70,7 @@ if __name__ == "__main__":
         "seer_liver",
         "seer_stomach",
     ]
-    strategies = ["original", "top_5", "random_25"]
+    strategies = ["original", "top_1", "top_5", "top_10", "random_25"]
     model_names = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
     for dataset in datasets:

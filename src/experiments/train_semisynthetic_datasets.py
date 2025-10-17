@@ -248,18 +248,12 @@ if __name__ == "__main__":
         ibs_true = true_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
         
         # Calculate uncensored IBS
-        uncensored_mask = data_test.event.values == 1
-        data_test_uncens = data_test[uncensored_mask]
-        uncens_evaluator = SurvivalEvaluator(survival_outputs[uncensored_mask], time_bins,
-                                             data_test_uncens.time.values, data_test_uncens.event.values,
+        original_evaluator = SurvivalEvaluator(survival_outputs, time_bins,
+                                             data_test.time.values, data_test.event.values,
                                              data_train.time.values, data_train.event.values)
-        ibs_uncens = uncens_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
-        
-        # Calculate IBS-IPCW
-        original_evaluator = SurvivalEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                               data_train.time.values, data_train.event.values)
+        ibs_uncens = original_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
         ibs_ipcw = original_evaluator.integrated_brier_score(num_points=10)
-
+        
         # Calculate independent metrics
         indep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                              data_train.time.values, data_train.event.values, copula_name="clayton", alpha=0)
