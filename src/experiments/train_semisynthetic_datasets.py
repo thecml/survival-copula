@@ -63,16 +63,12 @@ if __name__ == "__main__":
     df_synth = make_semi_synth(df_full, strategy=strategy)
     
     # Subsample
-    if dataset_name in ["metabric", "support", "nacd", "aids", "whas", "gbsg"]:
-        df_subsample = df_synth
-    elif dataset_name == "mimic_all":
+    if dataset_name == "mimic_all":
         df_subsample = subsample_dataset(df_synth.copy(), dataset_name, target_size=10000)
-    elif dataset_name == "mimic_hospital":
-        df_subsample = subsample_dataset(df_synth.copy(), dataset_name, censor_ratio=5, target_size=10000)
     elif dataset_name in ["seer_brain", "seer_liver", "seer_stomach"]:
         df_subsample = subsample_dataset(df_synth.copy(), dataset_name, target_size=10000)
     else:
-        raise ValueError("Invalid dataset")
+        df_subsample = df_synth
         
     # Split data
     df_train, df_valid, df_test = make_stratified_split(df_subsample, stratify_colname='both', frac_train=0.7,

@@ -43,6 +43,7 @@ def map_strategy_name(strategy):
 def map_dataset_name(dataset_name):
     return {
         "gbsg": "GBSG",
+        "aids": "AIDS",
         "metabric": "METABRIC",
         "mimic_all": "MIMIC-IV (all)",
         "mimic_hospital": "MIMIC-IV (hospital)",

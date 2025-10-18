@@ -92,6 +92,8 @@ def get_data_loader(dataset_name: str) -> BaseDataLoader:
         return NacdDataLoader()
     elif dataset_name == "support":
         return SupportDataLoader()
+    elif dataset_name == "flchain":
+        return FlchainDataLoader()
     elif dataset_name == "whas":
         return WhasDataLoader()
     elif dataset_name == "aids":
@@ -300,6 +302,27 @@ class SupportDataLoader(BaseDataLoader):
         self.X = pd.DataFrame(data.drop(['duration', 'event'], axis=1), dtype=np.float64)
         self.y = convert_to_structured(data['duration'], data['event'])
 
+        return self
+    
+    def split_data(self, train_size: float, valid_size: float,
+                   test_size: float, dtype=torch.float64, random_state=0):
+        raise NotImplementedError()
+    
+class FlchainDataLoader(BaseDataLoader):
+    def load_data(self, n_samples:int = None) -> None:
+        X, y = load_flchain()
+        X['event'] = y['death']
+        X['time'] = y['futime']
+
+        X = X.loc[X['time'] > 0]
+        self.y = convert_to_structured(X['time'], X['event'])
+        X = X.drop(['event', 'time'], axis=1).reset_index(drop=True)
+        
+        self.num_features = ['age', 'creatinine', 'kappa', 'lambda', 'sample.yr']
+        self.cat_features = ['chapter', 'flc.grp', 'mgus', 'sex']
+
+        self.X = pd.DataFrame(X)
+        
         return self
     
     def split_data(self, train_size: float, valid_size: float,

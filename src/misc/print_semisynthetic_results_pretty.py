@@ -60,23 +60,18 @@ def calculate_errors(results, dataset, strategy, model_names, metrics,
 if __name__ == "__main__":
     results = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "semisynthetic_results.csv"))
     
-    metrics = ["IBSUncensored", "IBSIPCW", "IBSIndepBG", "IBSIndepBGUW", "IBSDepBG", "IBSDepBGUW"]
+    metrics = ["IBSIPCW", "IBSIndepBG", "IBSIndepBGUW", "IBSDepBG", "IBSDepBGUW"]
     
     datasets = [
-        "metabric",
-        "mimic_all",
-        "mimic_hospital",
-        "seer_brain",
-        "seer_liver",
-        "seer_stomach",
+       "aids"
     ]
     strategies = ["original", "top_1", "top_5", "top_10", "random_25"]
     model_names = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
     for dataset in datasets:
-        n_samples, censoring_rate = get_dataset_info(dataset)
-        print(f"\n=== Dataset: {map_dataset_name(dataset)} "
-              f"(N={n_samples}, C={censoring_rate}%) ===")
+        #n_samples, censoring_rate = get_dataset_info(dataset)
+        print(f"\n=== Dataset: {map_dataset_name(dataset)} ")
+              #f"(N={n_samples}, C={censoring_rate}%) ===")
         
         # header
         header = ["Metric"] + [map_strategy_name(s) for s in strategies]
