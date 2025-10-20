@@ -14,7 +14,7 @@ if [ -f "$results_path" ]; then
 fi
 
 seeds=({0..9})
-dataset_names=("metabric" "gbsg" "nacd" "support" "flchain" "whas" "mimic_all" "seer_brain" "seer_liver" "seer_stomach")
+dataset_names=("metabric" "gbsg" "nacd" "support" "flchain" "whas" "employee" "churn" "mimic_all" "seer_brain" "seer_liver" "seer_stomach")
 strategies=('original' 'top_5' 'top_10' 'random_25')
 
 for seed in "${seeds[@]}"; do

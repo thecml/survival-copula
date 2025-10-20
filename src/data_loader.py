@@ -12,17 +12,6 @@ from dgp import DGP_Weibull_linear, DGP_Weibull_nonlinear
 import config as cfg
 from pathlib import Path
 from sksurv.datasets import load_gbsg2, load_aids, load_whas500, load_flchain
-from collections import defaultdict
-
-def _make_df(data):
-    x = data['x']
-    t = data['t']
-    d = data['e']
-    colnames = ['x'+str(i) for i in range(x.shape[1])]
-    df = (pd.DataFrame(x, columns=colnames)
-          .assign(duration=t)
-          .assign(event=d))
-    return df
 
 def kendall_to_pearson(tau: float) -> float:
     if not -1 <= tau <= 1:
@@ -98,6 +87,10 @@ def get_data_loader(dataset_name: str) -> BaseDataLoader:
         return WhasDataLoader()
     elif dataset_name == "aids":
         return AidsDataLoader()
+    elif dataset_name == "employee":
+        return EmployeeDataLoader()
+    elif dataset_name == "churn":
+        return ChurnDataLoader()
     elif dataset_name == "seer_brain":
         return SeerBrainDataLoader()
     elif dataset_name == "seer_breast":
@@ -337,6 +330,54 @@ class AidsDataLoader(BaseDataLoader):
         self.y = convert_to_structured(y['time'], y['censor'])
         self.num_features = ['age', 'cd4', 'karnof', 'priorzdv']
         self.cat_features = ['hemophil', 'ivdrug', 'raceth', 'sex', 'strat2', 'tx', 'txgrp']
+        
+        return self
+    
+    def split_data(self,
+                train_size: float,
+                valid_size: float,
+                test_size: float,
+                dtype=torch.float64,
+                random_state=0):
+        raise NotImplementedError()
+    
+class EmployeeDataLoader(BaseDataLoader):
+    def load_data(self) -> None:
+        retention = pd.read_csv(Path.joinpath(cfg.DATA_DIR, 'employee_attrition.csv')).rename(
+            columns={"time_spend_company": "time", "left": "event"})
+        
+        self.X = pd.DataFrame(retention.drop(['time', 'event'], axis=1))
+        self.y = convert_to_structured(retention['time'], retention['event'])
+        
+        self.cat_features = ['department', 'salary']
+        self.num_features = ['satisfaction_level', 'last_evaluation', 'number_projects', 'average_montly_hours',
+                             'work_accident', 'promotion_last_5years']
+        
+        return self
+    
+    def split_data(self,
+                train_size: float,
+                valid_size: float,
+                test_size: float,
+                dtype=torch.float64,
+                random_state=0):
+        raise NotImplementedError()
+    
+class ChurnDataLoader(BaseDataLoader):
+    def load_data(self) -> None:
+        churn = pd.read_csv(Path.joinpath(cfg.DATA_DIR, 'churn.csv')) \
+                .rename(columns={"months_active": "time", "churned": "event"})
+        churn.event = churn.event.astype(int)
+
+        churn = churn.drop(churn[churn["time"] <= 0].index)
+        churn.reset_index(drop=True, inplace=True)
+        
+        self.X = pd.DataFrame(churn.drop(['time', 'event'], axis=1))
+        self.y = convert_to_structured(churn['time'], churn['event'])
+        
+        self.cat_features = ['us_region', 'product_travel_expense', 'product_payroll', 'product_accounting', 'company_size']
+        self.num_features = ['product_data_storage', 'csat_score', 'articles_viewed', 'smartphone_notifications_viewed',
+                             'social_media_ads_viewed', 'marketing_emails_clicked', 'minutes_customer_support',]
         
         return self
     

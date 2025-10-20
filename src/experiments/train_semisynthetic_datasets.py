@@ -36,7 +36,7 @@ MODELS = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    
+
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--dataset_name', type=str, default='metabric')
     parser.add_argument('--strategy', type=str, default='original')
@@ -63,7 +63,9 @@ if __name__ == "__main__":
     df_synth = make_semi_synth(df_full, strategy=strategy)
     
     # Subsample
-    if dataset_name == "mimic_all":
+    if dataset_name == "employee":
+        df_subsample = subsample_dataset(df_synth.copy(), dataset_name, target_size=10000)
+    elif dataset_name == "mimic_all":
         df_subsample = subsample_dataset(df_synth.copy(), dataset_name, target_size=10000)
     elif dataset_name in ["seer_brain", "seer_liver", "seer_stomach"]:
         df_subsample = subsample_dataset(df_synth.copy(), dataset_name, target_size=10000)
@@ -118,6 +120,9 @@ if __name__ == "__main__":
     best_copula_name = None
     best_copula_theta = None
     
+    copula_start_time = time.time()
+    copula_memory_before = torch.cuda.memory_allocated(device) if torch.cuda.is_available() else 0
+    
     for copula_name in ["clayton", "frank"]:
         # Reset seeds
         np.random.seed(0)
@@ -148,6 +153,13 @@ if __name__ == "__main__":
             best_copula_theta = copula_theta
             
     print(f"Best copula: {best_copula_name} with theta = {best_copula_theta} and val_loss = {best_loss}")
+    
+    copula_end_time = time.time()
+    copula_memory_after = torch.cuda.memory_allocated(device) if torch.cuda.is_available() else 0
+    copula_runtime = copula_end_time - copula_start_time
+    copula_memory_used = (copula_memory_after - copula_memory_before) / 1024**2  # in MB
+
+    print(f"[Copula fitting] Time: {copula_runtime:.2f}s | Memory: {copula_memory_used:.2f}MB")
     
     for model_name in MODELS:
         # Reset seeds
@@ -239,24 +251,57 @@ if __name__ == "__main__":
         
         # Calculate uncensored IBS
         original_evaluator = SurvivalEvaluator(survival_outputs, time_bins,
-                                             data_test.time.values, data_test.event.values,
-                                             data_train.time.values, data_train.event.values)
+                                               data_test.time.values, data_test.event.values,
+                                               data_train.time.values, data_train.event.values)
+        
+        ibs_uncens_start_time = time.time()
         ibs_uncens = original_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
+        ibs_uncens_end_time = time.time()
+        ibs_uncens_time = ibs_uncens_end_time - ibs_uncens_start_time
+        
+        ibs_ipcw_start_time = time.time()
         ibs_ipcw = original_evaluator.integrated_brier_score(num_points=10)
+        ibs_ipcw_end_time = time.time()
+        ibs_ipcw_time = ibs_ipcw_end_time - ibs_ipcw_start_time 
         
         # Calculate independent metrics
         indep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                              data_train.time.values, data_train.event.values, copula_name="clayton", alpha=0)
+
+        ibs_indep_bg_start_time = time.time()
         ibs_indep_bg = indep_evaluator.integrated_brier_score(method="BG", num_points=10)
+        ibs_indep_bg_end_time = time.time()
+        ibs_indep_bg_time = ibs_indep_bg_end_time - ibs_indep_bg_start_time
+
+        ibs_indep_bguw_start_time = time.time()
         ibs_indep_bguw = indep_evaluator.integrated_brier_score(method="BG_UW", num_points=10)
+        ibs_indep_bguw_end_time = time.time()
+        ibs_indep_bguw_time = ibs_indep_bguw_end_time - ibs_indep_bguw_start_time
 
         # Calculate dependent metrics
         dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                            data_train.time.values, data_train.event.values, copula_name=best_copula_name,
                                            alpha=best_copula_theta)
-        ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
-        ibs_dep_bguw = dep_evaluator.integrated_brier_score(method="BG_UW", num_points=10)
         
+        ibs_dep_bg_start_time = time.time()
+        ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
+        ibs_dep_bg_end_time = time.time()
+        ibs_dep_bg_time = ibs_dep_bg_end_time - ibs_dep_bg_start_time
+
+        ibs_dep_bguw_start_time = time.time()
+        ibs_dep_bguw = dep_evaluator.integrated_brier_score(method="BG_UW", num_points=10)
+        ibs_dep_bguw_end_time = time.time()
+        ibs_dep_bguw_time = ibs_dep_bguw_end_time - ibs_dep_bguw_start_time
+                
+        # Create timing results
+        runtime_row = pd.Series([
+            seed, model_name, dataset_name, strategy,
+            copula_runtime, copula_memory_used,
+            ibs_uncens_time, ibs_ipcw_time, ibs_indep_bg_time,
+            ibs_indep_bguw_time, ibs_dep_bg_time, ibs_dep_bguw_time
+        ], index=runtime_log.columns)
+        runtime_log = pd.concat([runtime_log, runtime_row.to_frame().T], ignore_index=True)
+    
         # Create results
         result_row = pd.Series([seed, model_name, dataset_name, strategy, best_copula_name, best_copula_theta,
                                 ibs_true, ibs_uncens, ibs_ipcw, ibs_indep_bg, ibs_indep_bguw, ibs_dep_bg, ibs_dep_bguw],
@@ -264,7 +309,7 @@ if __name__ == "__main__":
                                        "IBSTrue", "IBSUncensored", "IBSIPCW", "IBSIndepBG", "IBSIndepBGUW", "IBSDepBG", "IBSDepBGUW"])
         model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
     
-        # Save results
+        # Save accuracy results
         filename = f"{cfg.RESULTS_DIR}/semisynthetic_results.csv"
         if os.path.exists(filename):
             results = pd.read_csv(filename)
@@ -273,3 +318,9 @@ if __name__ == "__main__":
         results = results.append(model_results, ignore_index=True)
         results.to_csv(filename, index=False)
         
+        # Save timing results
+        runtime_log_path = f"{cfg.RESULTS_DIR}/semisynthetic_results_timing.csv"
+        if os.path.exists(runtime_log_path):
+            existing_log = pd.read_csv(runtime_log_path)
+            runtime_log = pd.concat([existing_log, runtime_log], ignore_index=True)
+        runtime_log.to_csv(runtime_log_path, index=False)

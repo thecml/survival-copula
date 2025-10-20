@@ -58,7 +58,7 @@ def map_dataset_name(dataset_name):
     }.get(dataset_name, dataset_name)
     
 def subsample_dataset(df, name, time_col="time", event_col="event",
-                       n_bins=10, censor_ratio=5, target_size=None, random_state=42):
+                      n_bins=10, censor_ratio=5, target_size=None, random_state=42):
     """
     Downsample survival datasets according to predefined rules.
     Dataset names supported:
@@ -101,7 +101,7 @@ def subsample_dataset(df, name, time_col="time", event_col="event",
                 )
             )
 
-    elif name == "mimic_all":
+    elif name in ["employee", "mimic_all"]:
         if target_size is None:
             out = df
         else:
