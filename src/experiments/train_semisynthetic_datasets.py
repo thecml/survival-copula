@@ -36,7 +36,6 @@ MODELS = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--dataset_name', type=str, default='metabric')
     parser.add_argument('--strategy', type=str, default='original')
@@ -161,6 +160,22 @@ if __name__ == "__main__":
 
     print(f"[Copula fitting] Time: {copula_runtime:.2f}s | Memory: {copula_memory_used:.2f}MB")
     
+    # Create results
+    model_results = pd.DataFrame(columns=[
+        "Seed", "ModelName", "Dataset", "Strategy",
+        "BestCopulaName", "BestCopulaTheta",
+        "IBSTrue", "IBSUncensored", "IBSIPCW",
+        "IBSIndepBG", "IBSIndepBGUW", "IBSDepBG", "IBSDepBGUW"
+    ])
+    
+    # Create runtime log
+    runtime_log = pd.DataFrame(columns=[
+        "Seed", "ModelName", "Dataset", "Strategy",
+        "CopulaRuntime", "CopulaMemoryUsed",
+        "IBSUncensTime", "IBSIPCWTime", "IBSIndepBGTime",
+        "IBSIndepBGUWTime", "IBSDepBGTime", "IBSDepBGUWTime"
+    ])
+    
     for model_name in MODELS:
         # Reset seeds
         np.random.seed(0)
@@ -238,9 +253,6 @@ if __name__ == "__main__":
         else:
             raise NotImplementedError()
         
-        # Create results
-        model_results = pd.DataFrame()
-        
         # Make dataframe
         survival_outputs = pd.DataFrame(survival_outputs, columns=time_bins.cpu().numpy())
         survival_outputs[0] = 1
@@ -292,7 +304,14 @@ if __name__ == "__main__":
         ibs_dep_bguw = dep_evaluator.integrated_brier_score(method="BG_UW", num_points=10)
         ibs_dep_bguw_end_time = time.time()
         ibs_dep_bguw_time = ibs_dep_bguw_end_time - ibs_dep_bguw_start_time
-                
+    
+        # Create results
+        result_row = pd.Series([
+            seed, model_name, dataset_name, strategy, best_copula_name, best_copula_theta,
+            ibs_true, ibs_uncens, ibs_ipcw, ibs_indep_bg, ibs_indep_bguw, ibs_dep_bg, ibs_dep_bguw
+        ], index=model_results.columns)
+        model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
+        
         # Create timing results
         runtime_row = pd.Series([
             seed, model_name, dataset_name, strategy,
@@ -302,25 +321,19 @@ if __name__ == "__main__":
         ], index=runtime_log.columns)
         runtime_log = pd.concat([runtime_log, runtime_row.to_frame().T], ignore_index=True)
     
-        # Create results
-        result_row = pd.Series([seed, model_name, dataset_name, strategy, best_copula_name, best_copula_theta,
-                                ibs_true, ibs_uncens, ibs_ipcw, ibs_indep_bg, ibs_indep_bguw, ibs_dep_bg, ibs_dep_bguw],
-                                index=["Seed", "ModelName", "Dataset", "Strategy", "BestCopulaName", "BestCopulaTheta",
-                                       "IBSTrue", "IBSUncensored", "IBSIPCW", "IBSIndepBG", "IBSIndepBGUW", "IBSDepBG", "IBSDepBGUW"])
-        model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
+    results_path = f"{cfg.RESULTS_DIR}/semisynthetic_results.csv"
+    runtime_log_path = f"{cfg.RESULTS_DIR}/semisynthetic_results_timing.csv"
     
-        # Save accuracy results
-        filename = f"{cfg.RESULTS_DIR}/semisynthetic_results.csv"
-        if os.path.exists(filename):
-            results = pd.read_csv(filename)
-        else:
-            results = pd.DataFrame(columns=model_results.columns)
-        results = results.append(model_results, ignore_index=True)
-        results.to_csv(filename, index=False)
-        
-        # Save timing results
-        runtime_log_path = f"{cfg.RESULTS_DIR}/semisynthetic_results_timing.csv"
-        if os.path.exists(runtime_log_path):
-            existing_log = pd.read_csv(runtime_log_path)
-            runtime_log = pd.concat([existing_log, runtime_log], ignore_index=True)
-        runtime_log.to_csv(runtime_log_path, index=False)
+    os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
+    
+    # Save model results
+    if os.path.exists(results_path):
+        existing_results = pd.read_csv(results_path)
+        model_results = pd.concat([existing_results, model_results], ignore_index=True)
+    model_results.to_csv(results_path, index=False)
+
+    # Save runtime logs
+    if os.path.exists(runtime_log_path):
+        existing_runtime = pd.read_csv(runtime_log_path)
+        runtime_log = pd.concat([existing_runtime, runtime_log], ignore_index=True)
+    runtime_log.to_csv(runtime_log_path, index=False)
