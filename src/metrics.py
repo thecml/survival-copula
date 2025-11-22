@@ -13,6 +13,8 @@ from SurvivalEVAL.Evaluations.util import (check_and_convert, KaplanMeierArea, k
                                            predict_multi_probs_from_curve)
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
 
+from scipy.ndimage import gaussian_filter1d
+
 class DependentEvaluator:
     def __init__(self,
             predicted_survival_curves: NumericArrayLike,
@@ -254,83 +256,115 @@ class DependentEvaluator:
             
         time_points = np.linspace(0, max_target_time, num_points)
         time_range = max_target_time
-    
+        
         predict_probs_mat = []
         for i in range(predicted_curves.shape[0]):
-            predict_probs = predict_multi_probs_from_curve(predicted_curves[i, :],
-                                                           time_bins, time_points).tolist()
+            predict_probs = predict_multi_probs_from_curve(
+                predicted_curves[i, :],
+                time_bins,
+                time_points
+            ).tolist()
             predict_probs_mat.append(predict_probs)
+
         predict_probs_mat = np.array(predict_probs_mat)
+
+        # If smoothing is requested, apply AFTER prediction
+        do_smoothing = (method == "BG_smooth")
+
+        if do_smoothing:
+            predict_probs_mat = gaussian_filter1d(
+                predict_probs_mat, sigma=1.0, axis=1
+            )
 
         if method == "BG":
             censored_times = event_times[event_indicators == 0]
-            time_bins = self.time_coordinates
-            cg_model = CopulaGraphicWrapper(train_event_times, train_event_indicators,
-                                            copula_name=copula_name, alpha=alpha)
+            cg_model = CopulaGraphicWrapper(
+                train_event_times, train_event_indicators,
+                copula_name=copula_name, alpha=alpha
+            )
 
             censored_times_bg = cg_model.best_guess(censored_times)
             event_times_bg = event_times.copy()
             event_times_bg[event_indicators == 0] = censored_times_bg
 
-            event_indicators = np.ones_like(event_indicators)
+            event_indicators_bg = np.ones_like(event_indicators, dtype=bool)
+
             target_times_mat = np.repeat(time_points.reshape(1, -1), repeats=len(event_times), axis=0)
             event_times_mat = np.repeat(event_times_bg.reshape(-1, 1), repeats=len(time_points), axis=1)
-            event_indicators_mat = np.repeat(event_indicators.reshape(-1, 1), repeats=len(time_points), axis=1)
-            event_indicators_mat = event_indicators_mat.astype(bool)
+            event_indicators_mat = np.repeat(event_indicators_bg.reshape(-1, 1), repeats=len(time_points), axis=1)
 
-            weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat)
+            weight_cat1 = (event_times_mat <= target_times_mat) & event_indicators_mat
             weight_cat2 = (event_times_mat > target_times_mat)
+
         elif method == "BG_UW":
+
             censored_mask = (event_indicators == 0)
             censored_times = event_times[censored_mask]
 
-            # Event survival estimator (same object you already use to get BG)
-            cg_model = CopulaGraphicWrapper(train_event_times, train_event_indicators,
-                                            copula_name=copula_name, alpha=alpha)
+            cg_model = CopulaGraphicWrapper(
+                train_event_times, train_event_indicators,
+                copula_name=copula_name, alpha=alpha
+            )
 
-            # 1) Best-guess imputation (as in BG)
             censored_times_bg = cg_model.best_guess(censored_times)
             event_times_bg = event_times.copy()
             event_times_bg[censored_mask] = censored_times_bg
-    
-            # 2) Build matrices for IBS calculation (same as BG except all "events")
+            
             target_times_mat = np.repeat(time_points.reshape(1, -1), repeats=len(event_times), axis=0)
             event_times_mat  = np.repeat(event_times_bg.reshape(-1, 1), repeats=len(time_points), axis=1)
-            event_indicators_mat = np.ones_like(event_times_mat, dtype=bool)  # treat as uncensored after BG
 
-            # 3) Vanilla BG weights
-            weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat)
+            # treat imputed censored as "events"
+            event_indicators_mat = np.ones_like(event_times_mat, dtype=bool)
+
+            weight_cat1 = (event_times_mat <= target_times_mat)
             weight_cat2 = (event_times_mat > target_times_mat)
 
-            # Query S_hat at each censoring time c_i
+            # Build uncertainty weights per patient
             if censored_times.size > 0:
-                # Build CG estimator for the censoring distribution
-                cg_model_uncert = CopulaGraphic(train_event_times, train_event_indicators,
-                                                alpha=alpha, type=copula_name)
-
-                # Predict survival at each censoring time
+                cg_model_uncert = CopulaGraphic(
+                    train_event_times, train_event_indicators,
+                    alpha=alpha, type=copula_name
+                )
                 S_e = cg_model_uncert.predict(censored_times)
                 F_c = 1.0 - S_e
 
-                gamma = 1.0  # tune 0.5..2.0; higher gamma -> stronger down-weighting for early censoring
+                gamma = 1.0
                 w_c = np.clip(F_c, 0.0, 1.0) ** gamma
             else:
                 w_c = np.array([])
 
-            # Build a per-row weight vector w_row: 1 for uncensored; w_c for censored rows.
             w_row = np.ones(len(event_times), dtype=float)
             if w_c.size > 0:
                 w_row[censored_mask] = w_c
 
-            # Optional: rescale so average row-weight = 1 (keeps IBS scale comparable to BG)
             w_row /= (w_row.mean() + 1e-12)
-
-            # Expand to (n_samples, n_time_points)
             w_mat = np.repeat(w_row.reshape(-1, 1), repeats=len(time_points), axis=1)
 
-            # 5) Apply the uncertainty weights multiplicatively to both BG categories
             weight_cat1 = weight_cat1 * w_mat
             weight_cat2 = weight_cat2 * w_mat
+
+        elif method == "BG_smooth":
+
+            censored_times = event_times[event_indicators == 0]
+            cg_model = CopulaGraphicWrapper(
+                train_event_times, train_event_indicators,
+                copula_name=copula_name, alpha=alpha
+            )
+
+            censored_times_bg = cg_model.best_guess(censored_times)
+            event_times_bg = event_times.copy()
+            event_times_bg[event_indicators == 0] = censored_times_bg
+
+            event_times_mat = np.repeat(event_times_bg.reshape(-1, 1), repeats=len(time_points), axis=1)
+            target_times_mat = np.repeat(time_points.reshape(1, -1), repeats=len(event_times), axis=0)
+
+            # Smooth transition between "before" and "after" event
+            tau = max_target_time / 200.0
+            diff = event_times_mat - target_times_mat
+
+            weight_cat1 = 1.0 / (1.0 + np.exp(diff / (tau + 1e-12)))
+            weight_cat2 = 1.0 - weight_cat1
+
         else:
             raise NotImplementedError()
 

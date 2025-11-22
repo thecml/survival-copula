@@ -165,7 +165,7 @@ if __name__ == "__main__":
         "Seed", "ModelName", "Dataset", "Strategy",
         "BestCopulaName", "BestCopulaTheta",
         "IBSTrue", "IBSUncensored", "IBSIPCW",
-        "IBSIndepBG", "IBSIndepBGUW", "IBSDepBG", "IBSDepBGUW"
+        "IBSIndepBG", "IBSIndepBGUW", "IBSDepBG", "IBSDepBGUW", "IBSDepBGSmooth"
     ])
     
     # Create runtime log
@@ -173,7 +173,7 @@ if __name__ == "__main__":
         "Seed", "ModelName", "Dataset", "Strategy",
         "CopulaRuntime", "CopulaMemoryUsed",
         "IBSUncensTime", "IBSIPCWTime", "IBSIndepBGTime",
-        "IBSIndepBGUWTime", "IBSDepBGTime", "IBSDepBGUWTime"
+        "IBSIndepBGUWTime", "IBSDepBGTime", "IBSDepBGUWTime", "IBSDepBGSmoothTime"
     ])
     
     for model_name in MODELS:
@@ -304,11 +304,16 @@ if __name__ == "__main__":
         ibs_dep_bguw = dep_evaluator.integrated_brier_score(method="BG_UW", num_points=10)
         ibs_dep_bguw_end_time = time.time()
         ibs_dep_bguw_time = ibs_dep_bguw_end_time - ibs_dep_bguw_start_time
+        
+        ibs_dep_bgsmooth_start_time = time.time()
+        ibs_dep_bgsmooth = dep_evaluator.integrated_brier_score(method="BG_smooth", num_points=10)
+        ibs_dep_bgsmooth_end_time = time.time()
+        ibs_dep_bgsmooth_time = ibs_dep_bgsmooth_end_time - ibs_dep_bgsmooth_start_time
     
         # Create results
         result_row = pd.Series([
             seed, model_name, dataset_name, strategy, best_copula_name, best_copula_theta,
-            ibs_true, ibs_uncens, ibs_ipcw, ibs_indep_bg, ibs_indep_bguw, ibs_dep_bg, ibs_dep_bguw
+            ibs_true, ibs_uncens, ibs_ipcw, ibs_indep_bg, ibs_indep_bguw, ibs_dep_bg, ibs_dep_bguw, ibs_dep_bgsmooth
         ], index=model_results.columns)
         model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
         
@@ -317,7 +322,7 @@ if __name__ == "__main__":
             seed, model_name, dataset_name, strategy,
             copula_runtime, copula_memory_used,
             ibs_uncens_time, ibs_ipcw_time, ibs_indep_bg_time,
-            ibs_indep_bguw_time, ibs_dep_bg_time, ibs_dep_bguw_time
+            ibs_indep_bguw_time, ibs_dep_bg_time, ibs_dep_bguw_time, ibs_dep_bgsmooth_time
         ], index=runtime_log.columns)
         runtime_log = pd.concat([runtime_log, runtime_row.to_frame().T], ignore_index=True)
     
