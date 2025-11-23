@@ -3,14 +3,14 @@ import os
 import random
 import torch
 from copula import Clayton_Bivariate, Frank_Bivariate
-from data_loader import get_data_loader
+from data_loader import SingleEventSyntheticDataLoader, get_data_loader
 import pandas as pd
 import numpy as np
 import config as cfg
 from metrics import DependentEvaluator
 from sota.deepsurv import DeepSurv, make_deepsurv_prediction, train_deepsurv_model
 from sota.mtlr import make_mtlr_prediction, mtlr, train_mtlr_model
-from sota.sksurv import make_cox_model, make_gbsa_model, make_rsf_model, make_weibull_aft_model
+from sota.sksurv import make_cox_model, make_gbsa_model, make_rsf_model
 from utility.data import dotdict, subsample_dataset, fix_types
 from SurvivalEVAL import SurvivalEvaluator
 from scipy.interpolate import interp1d
@@ -20,6 +20,8 @@ from strategies import make_semi_synth
 from utility.preprocessor import Preprocessor
 from utility.survival import convert_to_structured, make_stratified_split, make_time_bins
 from trainer import train_copula_model
+
+from utility.survival import kendall_tau_to_theta
 
 import time
 
@@ -32,47 +34,29 @@ torch.set_default_dtype(dtype)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-MODELS = ["coxph", "gbsa", "rsf", "deepsurv", "weibullaft"]
+MODELS = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
+
+data_cfg = {
+    "alpha_e1": 19,
+    "alpha_e2": 17,
+    "gamma_e1": 6,
+    "gamma_e2": 4,
+    "n_samples": 10000,
+    "n_features": 10,
+}
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--dataset_name', type=str, default='metabric')
-    parser.add_argument('--strategy', type=str, default='original')
-    
-    args = parser.parse_args()
-    seed = args.seed
-    dataset_name = args.dataset_name
-    strategy = args.strategy
+    seed = 0
     
     # Load data
-    dl = get_data_loader(dataset_name).load_data()
-    df_full = dl.get_data().reset_index(drop=True)
-    num_features, cat_features = dl.get_features()
+    dl = SingleEventSyntheticDataLoader().load_data(data_cfg, k_tau=0.5, copula_name="clayton",
+                                                    linear=True, device=device, dtype=dtype)
+    df = dl.get_data()
+    df['true_time'] = dl.true_event_times
+    num_features, cat_features = ['X0', 'X1', 'X2', 'X3', 'X4', 'X5', 'X6', 'X7', 'X8', 'X9'], []
     
-    # Preprocess full dataset
-    preprocessor = Preprocessor(cat_feat_strat='mode', num_feat_strat='mean', scaling_strategy="minmax")
-    transformer = preprocessor.fit(df_full.drop(['time', 'event'], axis=1),
-                                   cat_feats=cat_features, num_feats=num_features,
-                                   one_hot=True, fill_value=-1)
-    X = transformer.transform(df_full.drop(['time', 'event'], axis=1)).reset_index(drop=True)
-    df_full = pd.concat([X, df_full[['time', 'event']]], axis=1)
-    
-    # Make semi-synthetic dataset
-    df_synth = make_semi_synth(df_full, strategy=strategy)
-    
-    # Subsample
-    if dataset_name == "employee":
-        df_subsample = subsample_dataset(df_synth.copy(), dataset_name, target_size=10000)
-    elif dataset_name == "mimic_all":
-        df_subsample = subsample_dataset(df_synth.copy(), dataset_name, target_size=10000)
-    elif dataset_name in ["seer_brain", "seer_liver", "seer_stomach"]:
-        df_subsample = subsample_dataset(df_synth.copy(), dataset_name, target_size=10000)
-    else:
-        df_subsample = df_synth
-        
     # Split data
-    df_train, df_valid, df_test = make_stratified_split(df_subsample, stratify_colname='both', frac_train=0.7,
+    df_train, df_valid, df_test = make_stratified_split(df, stratify_colname='both', frac_train=0.7,
                                                         frac_valid=0.1, frac_test=0.2,
                                                         random_state=seed)
     
@@ -80,11 +64,11 @@ if __name__ == "__main__":
     df_train, df_valid, df_test = fix_types(df_train, df_valid, df_test)
   
     # Process data
-    data_train = df_train.drop(columns=["true_time", "true_censor"])
+    data_train = df_train.drop(columns=["true_time"])
     true_test_time = df_test.true_time.values
     true_test_event = np.ones(df_test.shape[0])
-    data_valid = df_valid.drop(columns=["true_time", "true_censor"])
-    data_test = df_test.drop(columns=["true_time", "true_censor"])
+    data_valid = df_valid.drop(columns=["true_time"])
+    data_test = df_test.drop(columns=["true_time"])
     X_train = data_train.drop(columns=["time", "event"])
     X_valid = data_valid.drop(columns=["time", "event"])
     X_test = data_test.drop(columns=["time", "event"])
@@ -116,40 +100,11 @@ if __name__ == "__main__":
     # Estimate theta on the new dataset and find the best copula
     copula_result = dict()
     best_loss = float("inf")
-    best_copula_name = None
-    best_copula_theta = None
+    best_copula_name = "clayton"
+    best_copula_theta = kendall_tau_to_theta(best_copula_name, k_tau=0.5)
     
     copula_start_time = time.time()
     copula_memory_before = torch.cuda.memory_allocated(device) if torch.cuda.is_available() else 0
-    
-    for copula_name in ["clayton", "frank"]:
-        # Reset seeds
-        np.random.seed(0)
-        torch.manual_seed(0)
-        torch.cuda.manual_seed_all(0)
-        random.seed(0)
-        
-        torch.cuda.empty_cache()
-        
-        dep_model1 = Weibull_model(n_features, dtype=dtype, device=device)
-        dep_model2 = Weibull_model(n_features, dtype=dtype, device=device)
-        
-        if copula_name == "clayton":
-            copula = Clayton_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
-        elif copula_name == "frank":
-            copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
-            
-        dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
-                                                                          valid_dict, copula=copula, n_epochs=30000,
-                                                                          lr=0.01, batch_size=n_samples,
-                                                                          copula_name=copula_name, verbose=False)
-        copula_theta = copula.theta.item()
-        copula_result[copula_name] = {"theta": copula_theta, "val_loss": min_val_loss}
-        
-        if min_val_loss < best_loss:
-            best_loss = min_val_loss
-            best_copula_name = copula_name
-            best_copula_theta = copula_theta
             
     print(f"Best copula: {best_copula_name} with theta = {best_copula_theta} and val_loss = {best_loss}")
     
@@ -165,15 +120,14 @@ if __name__ == "__main__":
         "Seed", "ModelName", "Dataset", "Strategy",
         "BestCopulaName", "BestCopulaTheta",
         "IBSTrue", "IBSUncensored", "IBSIPCW",
-        "IBSIndepBG", "IBSIndepBGUW", "IBSDepBG", "IBSDepBGUW"
+        "IBSIndepBG", "IBSIndepBGUW", "IBSDepBG", "IBSDepBGUW",
     ])
     
     # Create runtime log
     runtime_log = pd.DataFrame(columns=[
         "Seed", "ModelName", "Dataset", "Strategy",
         "CopulaRuntime", "CopulaMemoryUsed",
-        "IBSUncensTime", "IBSIPCWTime", "IBSIndepBGTime",
-        "IBSIndepBGUWTime", "IBSDepBGTime", "IBSDepBGUWTime"
+        "IBSUncensTime", "IBSIPCWTime", "IBSIndepBGTime"
     ])
     
     for model_name in MODELS:
@@ -223,10 +177,6 @@ if __name__ == "__main__":
             model = train_mtlr_model(model, data_train, data_valid, time_bins.cpu().numpy(),
                                      config, random_state=0, dtype=dtype,
                                      reset_model=True, device=device)
-        elif model_name == "weibullaft":
-            config = dotdict(cfg.WEIBULL_AFT_PARAMS)
-            model = make_weibull_aft_model(config)
-            model.fit(X_train, y_train)
         else:
             raise NotImplementedError()
         end_time = time.time()
@@ -254,19 +204,12 @@ if __name__ == "__main__":
                                           dtype=dtype, device=device)
             survival_outputs, _, _ = make_mtlr_prediction(model, mtlr_test_data, time_bins, config)
             survival_outputs = survival_outputs[:, 1:].cpu().numpy()
-        elif model_name == "weibullaft":
-            times_numpy = time_bins.cpu().numpy()
-            X_test_df = pd.DataFrame(test_dict['X'].cpu().numpy(),
-                                     columns=model.feature_names_)
-            surv_df = model.model.predict_survival_function(X_test_df, times=times_numpy)
-            preds_array = np.minimum(np.asarray(surv_df.T), 1.0)
-            survival_outputs = pd.DataFrame(preds_array, columns=times_numpy)
         else:
             raise NotImplementedError()
         
         # Make dataframe
         survival_outputs = pd.DataFrame(survival_outputs, columns=time_bins.cpu().numpy())
-        survival_outputs[0] = 1
+        #survival_outputs[0] = 1
         
         # Create true evaluator to calculate true IBS
         true_evaluator = SurvivalEvaluator(survival_outputs, time_bins, true_test_time, true_test_event)
@@ -315,25 +258,25 @@ if __name__ == "__main__":
         ibs_dep_bguw = dep_evaluator.integrated_brier_score(method="BG_UW", num_points=10)
         ibs_dep_bguw_end_time = time.time()
         ibs_dep_bguw_time = ibs_dep_bguw_end_time - ibs_dep_bguw_start_time
-    
+        
         # Create results
         result_row = pd.Series([
-            seed, model_name, dataset_name, strategy, best_copula_name, best_copula_theta,
+            seed, model_name, best_copula_name, best_copula_theta,
             ibs_true, ibs_uncens, ibs_ipcw, ibs_indep_bg, ibs_indep_bguw, ibs_dep_bg, ibs_dep_bguw
         ], index=model_results.columns)
         model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
         
         # Create timing results
         runtime_row = pd.Series([
-            seed, model_name, dataset_name, strategy,
+            seed, model_name,
             copula_runtime, copula_memory_used,
             ibs_uncens_time, ibs_ipcw_time, ibs_indep_bg_time,
             ibs_indep_bguw_time, ibs_dep_bg_time, ibs_dep_bguw_time
         ], index=runtime_log.columns)
         runtime_log = pd.concat([runtime_log, runtime_row.to_frame().T], ignore_index=True)
     
-    results_path = f"{cfg.RESULTS_DIR}/semisynthetic_results.csv"
-    runtime_log_path = f"{cfg.RESULTS_DIR}/semisynthetic_results_timing.csv"
+    results_path = f"{cfg.RESULTS_DIR}/synthetic_results.csv"
+    runtime_log_path = f"{cfg.RESULTS_DIR}/synthetic_results_timing.csv"
     
     os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
     

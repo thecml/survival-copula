@@ -4,7 +4,7 @@ import pandas as pd
 import config as cfg
 
 if __name__ == "__main__":
-    results = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "semisynthetic_results.csv"))
+    results = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "semisynthetic_results_org.csv"))
 
     # Metrics to evaluate
     ranking_metrics = [

@@ -38,7 +38,7 @@ data_cfg = {
 
 SEEDS = list(range(0, 100))
 COPULA_NAMES = ["clayton", "frank"]
-K_TAU = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+K_TAU = [0.5]
 DATA = [(10000, 10)]
 LINEAR = True
 
@@ -126,10 +126,11 @@ if __name__ == "__main__":
                     # Calculate dependent metrics
                     theta = kendall_tau_to_theta(copula_name, k_tau)
                     dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
-                                                    data_train.time.values, data_train.event.values, copula_name=copula_name,
-                                                    alpha=theta)
+                                                       data_train.time.values, data_train.event.values, copula_name=copula_name,
+                                                       alpha=theta)
                     ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
                     ibs_dep_bguw = dep_evaluator.integrated_brier_score(method="BG_UW", num_points=10)
+                    ibs_dep_bgsmooth = dep_evaluator.integrated_brier_score(method="BG_stable", num_points=10)
                             
                     # Calculate errors
                     ibs_uncens_error = abs(ibs_true - ibs_uncens)
@@ -138,6 +139,7 @@ if __name__ == "__main__":
                     ibs_indep_bguw_error = abs(ibs_true - ibs_indep_bguw)
                     ibs_dep_bg_error = abs(ibs_true - ibs_dep_bg)
                     ibs_dep_bguw_error = abs(ibs_true - ibs_dep_bguw)
+                    ibs_dep_bgsmooth_error = abs(ibs_true - ibs_dep_bgsmooth)
                     
                     # Store results in the dictionary
                     results_dict[(seed, copula_name, k_tau, n_samples, n_features)] = {
@@ -146,7 +148,8 @@ if __name__ == "__main__":
                         "ibs_indep_bg_error": ibs_indep_bg_error,
                         "ibs_indep_bguw_error": ibs_indep_bguw_error,
                         "ibs_dep_bg_error": ibs_dep_bg_error,
-                        "ibs_dep_bguw_error": ibs_dep_bguw_error
+                        "ibs_dep_bguw_error": ibs_dep_bguw_error,
+                        "ibs_dep_bgsmooth_error": ibs_dep_bgsmooth_error,
                     }
                     
     # Flatten the nested dictionary into a list of rows

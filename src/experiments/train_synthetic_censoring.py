@@ -136,6 +136,7 @@ if __name__ == "__main__":
             ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
             ibs_dep_bguw = dep_evaluator.integrated_brier_score(method="BG_UW", num_points=10)
             ibs_dep_bgsmooth = dep_evaluator.integrated_brier_score(method="BG_smooth", num_points=10)
+            ibs_dep_ipcw = dep_evaluator.integrated_brier_score(method="IPCW", num_points=10)
                     
             # Calculate errors
             ibs_uncens_error = abs(ibs_true - ibs_uncens)
@@ -145,6 +146,7 @@ if __name__ == "__main__":
             ibs_dep_bg_error = abs(ibs_true - ibs_dep_bg)
             ibs_dep_bguw_error = abs(ibs_true - ibs_dep_bguw)
             ibs_dep_bgsmooth_error = abs(ibs_true - ibs_dep_bgsmooth)
+            ibs_dep_ipcw_error = abs(ibs_true - ibs_dep_ipcw)
             
             # Store results in the dictionary
             results_dict[(seed, copula_name, k_tau, n_samples, n_features, censoring_rate)] = {
@@ -154,7 +156,8 @@ if __name__ == "__main__":
                 "ibs_indep_bguw_error": ibs_indep_bguw_error,
                 "ibs_dep_bg_error": ibs_dep_bg_error,
                 "ibs_dep_bguw_error": ibs_dep_bguw_error,
-                "ibs_dep_bgsmooth_error": ibs_dep_bgsmooth_error
+                "ibs_dep_bgsmooth_error": ibs_dep_bgsmooth_error,
+                "ibs_dep_ipcw_error": ibs_dep_ipcw_error
             }
             
     # Flatten the nested dictionary into a list of rows
