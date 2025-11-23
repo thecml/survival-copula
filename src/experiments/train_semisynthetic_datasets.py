@@ -114,51 +114,87 @@ if __name__ == "__main__":
     time_bins = torch.cat((torch.tensor([0]).to(device), time_bins))
     
     # Estimate theta on the new dataset and find the best copula
-    copula_result = dict()
-    best_loss = float("inf")
+    copula_param_path = f"{cfg.RESULTS_DIR}/copula_parameters.csv"
     best_copula_name = None
     best_copula_theta = None
+        
+    # Try to load cached copula parameters
+    if os.path.exists(copula_param_path):
+        cop_df = pd.read_csv(copula_param_path)
+        match = cop_df[
+            (cop_df["Seed"] == seed) &
+            (cop_df["Dataset"] == dataset_name) &
+            (cop_df["Strategy"] == strategy)
+        ]
+        if len(match) == 1:
+            best_copula_name = match.iloc[0]["BestCopulaName"]
+            best_copula_theta = match.iloc[0]["BestCopulaTheta"]
+            print(f"Loaded cached copula: {best_copula_name} (θ={best_copula_theta})")
+            copula_runtime = 0.0
+            copula_memory_used = 0.0
     
-    copula_start_time = time.time()
-    copula_memory_before = torch.cuda.memory_allocated(device) if torch.cuda.is_available() else 0
-    
-    for copula_name in ["clayton", "frank"]:
-        # Reset seeds
-        np.random.seed(0)
-        torch.manual_seed(0)
-        torch.cuda.manual_seed_all(0)
-        random.seed(0)
-        
-        torch.cuda.empty_cache()
-        
-        dep_model1 = Weibull_model(n_features, dtype=dtype, device=device)
-        dep_model2 = Weibull_model(n_features, dtype=dtype, device=device)
-        
-        if copula_name == "clayton":
-            copula = Clayton_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
-        elif copula_name == "frank":
-            copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
-            
-        dep_model1, dep_model2, copula, min_val_loss = train_copula_model(dep_model1, dep_model2, train_dict,
-                                                                          valid_dict, copula=copula, n_epochs=30000,
-                                                                          lr=0.01, batch_size=n_samples,
-                                                                          copula_name=copula_name, verbose=False)
-        copula_theta = copula.theta.item()
-        copula_result[copula_name] = {"theta": copula_theta, "val_loss": min_val_loss}
-        
-        if min_val_loss < best_loss:
-            best_loss = min_val_loss
-            best_copula_name = copula_name
-            best_copula_theta = copula_theta
-            
-    print(f"Best copula: {best_copula_name} with theta = {best_copula_theta} and val_loss = {best_loss}")
-    
-    copula_end_time = time.time()
-    copula_memory_after = torch.cuda.memory_allocated(device) if torch.cuda.is_available() else 0
-    copula_runtime = copula_end_time - copula_start_time
-    copula_memory_used = (copula_memory_after - copula_memory_before) / 1024**2  # in MB
+    # If not cached, then perform training
+    if best_copula_name is None:
+        copula_result = dict()
+        best_loss = float("inf")
 
-    print(f"[Copula fitting] Time: {copula_runtime:.2f}s | Memory: {copula_memory_used:.2f}MB")
+        copula_start_time = time.time()
+        copula_memory_before = torch.cuda.memory_allocated(device) if torch.cuda.is_available() else 0
+
+        for copula_name in ["clayton", "frank"]:
+            # Reset seeds
+            np.random.seed(0)
+            torch.manual_seed(0)
+            torch.cuda.manual_seed_all(0)
+            random.seed(0)
+            torch.cuda.empty_cache()
+
+            dep_model1 = Weibull_model(n_features, dtype=dtype, device=device)
+            dep_model2 = Weibull_model(n_features, dtype=dtype, device=device)
+
+            if copula_name == "clayton":
+                copula = Clayton_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
+            elif copula_name == "frank":
+                copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
+
+            dep_model1, dep_model2, copula, min_val_loss = train_copula_model(
+                dep_model1, dep_model2, train_dict, valid_dict,
+                copula=copula, n_epochs=30000, lr=0.01,
+                batch_size=n_samples, copula_name=copula_name, verbose=False
+            )
+
+            copula_theta = copula.theta.item()
+            copula_result[copula_name] = {"theta": copula_theta, "val_loss": min_val_loss}
+
+            if min_val_loss < best_loss:
+                best_loss = min_val_loss
+                best_copula_name = copula_name
+                best_copula_theta = copula_theta
+
+        print(f"Best copula: {best_copula_name} with theta = {best_copula_theta} and val_loss = {best_loss}")
+
+        copula_end_time = time.time()
+        copula_memory_after = torch.cuda.memory_allocated(device) if torch.cuda.is_available() else 0
+        copula_runtime = copula_end_time - copula_start_time
+        copula_memory_used = (copula_memory_after - copula_memory_before) / 1024**2  # MB
+
+        # Save to copula_parameters.csv
+        new_row = pd.DataFrame([{
+            "Seed": seed,
+            "Dataset": dataset_name,
+            "Strategy": strategy,
+            "BestCopulaName": best_copula_name,
+            "BestCopulaTheta": best_copula_theta
+        }])
+
+        if os.path.exists(copula_param_path):
+            existing = pd.read_csv(copula_param_path)
+            existing = pd.concat([existing, new_row], ignore_index=True).drop_duplicates()
+            existing.to_csv(copula_param_path, index=False)
+        else:
+            new_row.to_csv(copula_param_path, index=False)
+
+    print(f"Copula fitting done. Time: {copula_runtime:.2f}s | Memory: {copula_memory_used:.2f}MB")
     
     # Create results
     model_results = pd.DataFrame(columns=[
