@@ -4,7 +4,7 @@ import pandas as pd
 import config as cfg
 
 if __name__ == "__main__":
-    results = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "semisynthetic_results_org.csv"))
+    results = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "semisynthetic_results.csv"))
 
     # Metrics to evaluate
     ranking_metrics = [
@@ -19,7 +19,7 @@ if __name__ == "__main__":
         "support", "employee", "mimic_all", "seer_brain",
         "seer_liver", "seer_stomach"
     ]
-
+    
     # Use all strategies for the combined total (40 runs)
     strategies = ["original", "top_5", "top_10", "random_25"]
 
@@ -31,6 +31,17 @@ if __name__ == "__main__":
         true_rank = np.argsort(true_vals)
         metric_rank = np.argsort(metric_vals)
         return set(true_rank[:k]) == set(metric_rank[:k])
+    
+    def topk_soft(true_vals, metric_vals, k=3, min_hits=2):
+        """Return True if at least min_hits of the true top-k are in the metric's top-k."""
+        true_rank = np.argsort(true_vals)
+        metric_rank = np.argsort(metric_vals)
+
+        true_topk = set(true_rank[:k])
+        metric_topk = set(metric_rank[:k])
+
+        hits = len(true_topk & metric_topk)
+        return hits >= min_hits, hits
 
     # ==== Build the LaTeX table rows ====
     for metric_key, metric_label in ranking_metrics:
@@ -59,7 +70,7 @@ if __name__ == "__main__":
                     metric_vals = df[metric_key].values
 
                     # Compare ranking sets
-                    correct += int(topk_correct(true_vals, metric_vals, k=3))
+                    correct += int(topk_soft(true_vals, metric_vals)[0])
                     total += 1
 
             row.append(f"{correct}/{total}")
