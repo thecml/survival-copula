@@ -89,7 +89,7 @@ if __name__ == "__main__":
         "seer_stomach",
     ]
     
-    model_names = ["coxph", "gbsa", "rsf", "deepsurv", "weibullaft"]
+    model_names = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
     for strategy_i, (strategy_key, strategy_label) in enumerate(strategy_names.items()):
         print(r"\multirow{4}{*}{\rotatebox{90}{" + strategy_label + r"}}")

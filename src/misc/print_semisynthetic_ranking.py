@@ -24,7 +24,7 @@ if __name__ == "__main__":
     strategies = ["original", "top_5", "top_10", "random_25"]
 
     seeds = list(range(10))
-    model_names = ["coxph", "gbsa", "rsf", "deepsurv", "weibullaft"]
+    model_names = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
     def topk_correct(true_vals, metric_vals, k=3):
         """Return True if the *set* of top-k models matches (order ignored)."""
