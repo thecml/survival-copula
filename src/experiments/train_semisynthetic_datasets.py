@@ -14,6 +14,8 @@ from sota.sksurv import make_cox_model, make_gbsa_model, make_rsf_model, make_we
 from utility.data import dotdict, subsample_dataset, fix_types
 from SurvivalEVAL import SurvivalEvaluator
 from scipy.interpolate import interp1d
+from SurvivalEVAL.Evaluations.util import predict_median_survival_time
+from sksurv.metrics import concordance_index_ipcw
 
 from models import Weibull_model
 from strategies import make_semi_synth
@@ -201,7 +203,9 @@ if __name__ == "__main__":
         "Seed", "ModelName", "Dataset", "Strategy",
         "BestCopulaName", "BestCopulaTheta",
         "IBSTrue", "IBSUncensored", "IBSIPCW",
-        "IBSIndepBG", "IBSIndepBGUW", "IBSDepBG", "IBSDepBGUW"
+        "IBSIndepBG", "IBSIndepBGUW", "IBSDepBG", "IBSDepBGUW",
+        "CITrue", "CIUno", "CIIndepBG", "CIDepBG",
+        "MAETrue", "MAEMargin", "MAEIndepBG", "MAEDepBG",
     ])
     
     # Create runtime log
@@ -209,7 +213,9 @@ if __name__ == "__main__":
         "Seed", "ModelName", "Dataset", "Strategy",
         "CopulaRuntime", "CopulaMemoryUsed",
         "IBSUncensTime", "IBSIPCWTime", "IBSIndepBGTime",
-        "IBSIndepBGUWTime", "IBSDepBGTime", "IBSDepBGUWTime"
+        "IBSIndepBGUWTime", "IBSDepBGTime", "IBSDepBGUWTime",
+        "CIUnoTime", "CIIndepBGTime", "CIDepBGTime",
+        "MAEMarginTime", "MAEIndepBGTime", "MAEDepBGTime",
     ])
     
     for model_name in MODELS:
@@ -306,13 +312,22 @@ if __name__ == "__main__":
         
         # Create true evaluator to calculate true IBS
         true_evaluator = SurvivalEvaluator(survival_outputs, time_bins, true_test_time, true_test_event)
+        ci_true = true_evaluator.concordance()[0]
         ibs_true = true_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
+        mae_true = true_evaluator.mae(method="Uncensored")
         
-        # Calculate uncensored IBS
         original_evaluator = SurvivalEvaluator(survival_outputs, time_bins,
                                                data_test.time.values, data_test.event.values,
                                                data_train.time.values, data_train.event.values)
+        # Calculate CI
+        ci_uno_start = time.time()
+        predicted_times = original_evaluator.predict_time_from_curve(predict_median_survival_time)
+        risks = -1 * predicted_times
+        ci_uno = concordance_index_ipcw(y_train, y_test, risks, tau=y_train['time'].max())[0]
+        ci_uno_end = time.time()
+        ci_uno_time = ci_uno_end - ci_uno_start
         
+        # Calculate IBS
         ibs_uncens_start_time = time.time()
         ibs_uncens = original_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
         ibs_uncens_end_time = time.time()
@@ -321,12 +336,23 @@ if __name__ == "__main__":
         ibs_ipcw_start_time = time.time()
         ibs_ipcw = original_evaluator.integrated_brier_score(num_points=10)
         ibs_ipcw_end_time = time.time()
-        ibs_ipcw_time = ibs_ipcw_end_time - ibs_ipcw_start_time 
+        ibs_ipcw_time = ibs_ipcw_end_time - ibs_ipcw_start_time
         
-        # Calculate independent metrics
+        # Calculate MAE
+        mae_margin_start = time.time()
+        mae_margin = original_evaluator.mae(method="Margin", weighted=True)
+        mae_margin_end = time.time()
+        mae_margin_time = mae_margin_end - mae_margin_start
+        
+        # Calculate independent metrics CI/IBS/MAE
         indep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                              data_train.time.values, data_train.event.values, copula_name="clayton", alpha=0)
 
+        ci_indep_start = time.time()
+        ci_indep_bg = indep_evaluator.concordance(method="BG")
+        ci_indep_end = time.time()
+        ci_indep_time = ci_indep_end - ci_indep_start
+        
         ibs_indep_bg_start_time = time.time()
         ibs_indep_bg = indep_evaluator.integrated_brier_score(method="BG", num_points=10)
         ibs_indep_bg_end_time = time.time()
@@ -336,12 +362,22 @@ if __name__ == "__main__":
         ibs_indep_bguw = indep_evaluator.integrated_brier_score(method="BG_UW", num_points=10)
         ibs_indep_bguw_end_time = time.time()
         ibs_indep_bguw_time = ibs_indep_bguw_end_time - ibs_indep_bguw_start_time
+            
+        mae_indep_start = time.time()
+        mae_indep_bg = indep_evaluator.mae(method="BG", weighted=True)
+        mae_indep_end = time.time()
+        mae_indep_time = mae_indep_end - mae_indep_start
 
         # Calculate dependent metrics
         dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                            data_train.time.values, data_train.event.values, copula_name=best_copula_name,
                                            alpha=best_copula_theta)
         
+        ci_dep_start = time.time()
+        ci_dep_bg = dep_evaluator.concordance(method="BG")
+        ci_dep_end = time.time()
+        ci_dep_time = ci_dep_end - ci_dep_start
+            
         ibs_dep_bg_start_time = time.time()
         ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
         ibs_dep_bg_end_time = time.time()
@@ -351,22 +387,40 @@ if __name__ == "__main__":
         ibs_dep_bguw = dep_evaluator.integrated_brier_score(method="BG_UW", num_points=10)
         ibs_dep_bguw_end_time = time.time()
         ibs_dep_bguw_time = ibs_dep_bguw_end_time - ibs_dep_bguw_start_time
-    
+        
+        mae_dep_start = time.time()
+        mae_dep_bg = dep_evaluator.mae(method="BG", weighted=True)
+        mae_dep_end = time.time()
+        mae_dep_time = mae_dep_end - mae_dep_start
+        
         # Create results
         result_row = pd.Series([
-            seed, model_name, dataset_name, strategy, best_copula_name, best_copula_theta,
-            ibs_true, ibs_uncens, ibs_ipcw, ibs_indep_bg, ibs_indep_bguw, ibs_dep_bg, ibs_dep_bguw
+            seed, model_name, dataset_name, strategy,
+            best_copula_name, best_copula_theta,
+            ibs_true, ibs_uncens, ibs_ipcw,
+            ibs_indep_bg, ibs_indep_bguw, ibs_dep_bg, ibs_dep_bguw,
+            ci_true, ci_uno, ci_indep_bg, ci_dep_bg,
+            mae_true, mae_margin, mae_indep_bg, mae_dep_bg
         ], index=model_results.columns)
-        model_results = pd.concat([model_results, result_row.to_frame().T], ignore_index=True)
+        model_results = pd.concat(
+            [model_results, result_row.to_frame().T],
+            ignore_index=True
+        )
         
         # Create timing results
         runtime_row = pd.Series([
             seed, model_name, dataset_name, strategy,
             copula_runtime, copula_memory_used,
             ibs_uncens_time, ibs_ipcw_time, ibs_indep_bg_time,
-            ibs_indep_bguw_time, ibs_dep_bg_time, ibs_dep_bguw_time
+            ibs_indep_bguw_time, ibs_dep_bg_time, ibs_dep_bguw_time,
+            ci_uno_time, ci_indep_time, ci_dep_time,
+            mae_margin_time, mae_indep_time, mae_dep_time
         ], index=runtime_log.columns)
-        runtime_log = pd.concat([runtime_log, runtime_row.to_frame().T], ignore_index=True)
+
+        runtime_log = pd.concat(
+            [runtime_log, runtime_row.to_frame().T],
+            ignore_index=True
+        )
     
     results_path = f"{cfg.RESULTS_DIR}/semisynthetic_results.csv"
     runtime_log_path = f"{cfg.RESULTS_DIR}/semisynthetic_results_timing.csv"

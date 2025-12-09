@@ -135,7 +135,7 @@ class DependentEvaluator:
             partial_weights = np.ones_like(event_indicators, dtype=float)
             use_cg_weights = True  
             
-            if use_cg_weights:  
+            if use_cg_weights:
                 # KM/CG-based weights
                 censor_times = event_times[cens_mask]
                 partial_weights[cens_mask] = 1 - cg_model.predict(censor_times)
