@@ -349,7 +349,7 @@ if __name__ == "__main__":
                                              data_train.time.values, data_train.event.values, copula_name="clayton", alpha=0)
 
         ci_indep_start = time.time()
-        ci_indep_bg = indep_evaluator.concordance(method="BG")
+        ci_indep_bg = indep_evaluator.concordance(method="BG")[0]
         ci_indep_end = time.time()
         ci_indep_time = ci_indep_end - ci_indep_start
         
@@ -374,7 +374,7 @@ if __name__ == "__main__":
                                            alpha=best_copula_theta)
         
         ci_dep_start = time.time()
-        ci_dep_bg = dep_evaluator.concordance(method="BG")
+        ci_dep_bg = dep_evaluator.concordance(method="BG")[0]
         ci_dep_end = time.time()
         ci_dep_time = ci_dep_end - ci_dep_start
             
