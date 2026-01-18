@@ -140,16 +140,26 @@ if __name__ == "__main__":
         copula_result = dict()
         best_loss = float("inf")
 
+        # robust timing + peak memory (MiB)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize(device)
+            torch.cuda.reset_peak_memory_stats(device)
+            copula_mem_baseline = torch.cuda.memory_allocated(device)
+        else:
+            copula_mem_baseline = 0
+
         copula_start_time = time.time()
-        copula_memory_before = torch.cuda.memory_allocated(device) if torch.cuda.is_available() else 0
 
         for copula_name in ["clayton", "frank"]:
             # Reset seeds
             np.random.seed(0)
             torch.manual_seed(0)
-            torch.cuda.manual_seed_all(0)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(0)
             random.seed(0)
-            torch.cuda.empty_cache()
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
             dep_model1 = Weibull_model(n_features, dtype=dtype, device=device)
             dep_model2 = Weibull_model(n_features, dtype=dtype, device=device)
@@ -158,6 +168,8 @@ if __name__ == "__main__":
                 copula = Clayton_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
             elif copula_name == "frank":
                 copula = Frank_Bivariate(2.0, 1e-4, dtype=dtype, device=device)
+            else:
+                raise ValueError(f"Unknown copula_name={copula_name}")
 
             dep_model1, dep_model2, copula, min_val_loss = train_copula_model(
                 dep_model1, dep_model2, train_dict, valid_dict,
@@ -165,20 +177,30 @@ if __name__ == "__main__":
                 batch_size=n_samples, copula_name=copula_name, verbose=False
             )
 
-            copula_theta = copula.theta.item()
-            copula_result[copula_name] = {"theta": copula_theta, "val_loss": min_val_loss}
+            copula_theta = float(copula.theta.item())
+            copula_result[copula_name] = {"theta": copula_theta, "val_loss": float(min_val_loss)}
 
             if min_val_loss < best_loss:
-                best_loss = min_val_loss
+                best_loss = float(min_val_loss)
                 best_copula_name = copula_name
                 best_copula_theta = copula_theta
 
-        print(f"Best copula: {best_copula_name} with theta = {best_copula_theta} and val_loss = {best_loss}")
-
+        if torch.cuda.is_available():
+            torch.cuda.synchronize(device)
         copula_end_time = time.time()
-        copula_memory_after = torch.cuda.memory_allocated(device) if torch.cuda.is_available() else 0
+
         copula_runtime = copula_end_time - copula_start_time
-        copula_memory_used = (copula_memory_after - copula_memory_before) / 1024**2  # MB
+
+        # Peak allocated memory during the whole copula-fitting block (MiB)
+        if torch.cuda.is_available():
+            copula_peak_alloc = torch.cuda.max_memory_allocated(device)
+            copula_memory_used = (copula_peak_alloc - copula_mem_baseline) / (1024 ** 2)  # MiB
+            # Guard against tiny negative due to allocator bookkeeping
+            copula_memory_used = max(0.0, float(copula_memory_used))
+        else:
+            copula_memory_used = 0.0
+
+        print(f"Best copula: {best_copula_name} with theta = {best_copula_theta} and val_loss = {best_loss}")
 
         # Save to copula_parameters.csv
         new_row = pd.DataFrame([{
@@ -196,7 +218,7 @@ if __name__ == "__main__":
         else:
             new_row.to_csv(copula_param_path, index=False)
 
-    print(f"Copula fitting done. Time: {copula_runtime:.2f}s | Memory: {copula_memory_used:.2f}MB")
+    print(f"Copula fitting done. Time: {copula_runtime:.2f}s | Peak GPU Mem: {copula_memory_used:.2f} MiB")
     
     # Create results
     model_results = pd.DataFrame(columns=[
@@ -204,8 +226,6 @@ if __name__ == "__main__":
         "BestCopulaName", "BestCopulaTheta",
         "IBSTrue", "IBSUncensored", "IBSIPCW",
         "IBSIndepBG", "IBSIndepBGUW", "IBSDepBG", "IBSDepBGUW",
-        "CITrue", "CIUno", "CIIndepBG", "CIDepBG",
-        "MAETrue", "MAEMargin", "MAEIndepBG", "MAEDepBG",
     ])
     
     # Create runtime log
@@ -214,8 +234,6 @@ if __name__ == "__main__":
         "CopulaRuntime", "CopulaMemoryUsed",
         "IBSUncensTime", "IBSIPCWTime", "IBSIndepBGTime",
         "IBSIndepBGUWTime", "IBSDepBGTime", "IBSDepBGUWTime",
-        "CIUnoTime", "CIIndepBGTime", "CIDepBGTime",
-        "MAEMarginTime", "MAEIndepBGTime", "MAEDepBGTime",
     ])
     
     for model_name in MODELS:
@@ -312,21 +330,10 @@ if __name__ == "__main__":
         
         # Create true evaluator to calculate true IBS
         true_evaluator = SurvivalEvaluator(survival_outputs, time_bins, true_test_time, true_test_event)
-        ci_true = true_evaluator.concordance()[0]
         ibs_true = true_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
-        mae_true = true_evaluator.mae(method="Uncensored")
-        
         original_evaluator = SurvivalEvaluator(survival_outputs, time_bins,
                                                data_test.time.values, data_test.event.values,
                                                data_train.time.values, data_train.event.values)
-        # Calculate CI
-        ci_uno_start = time.time()
-        predicted_times = original_evaluator.predict_time_from_curve(predict_median_survival_time)
-        risks = -1 * predicted_times
-        ci_uno = concordance_index_ipcw(y_train, y_test, risks, tau=y_train['time'].max())[0]
-        ci_uno_end = time.time()
-        ci_uno_time = ci_uno_end - ci_uno_start
-        
         # Calculate IBS
         ibs_uncens_start_time = time.time()
         ibs_uncens = original_evaluator.integrated_brier_score(IPCW_weighted=False, num_points=10)
@@ -338,20 +345,9 @@ if __name__ == "__main__":
         ibs_ipcw_end_time = time.time()
         ibs_ipcw_time = ibs_ipcw_end_time - ibs_ipcw_start_time
         
-        # Calculate MAE
-        mae_margin_start = time.time()
-        mae_margin = original_evaluator.mae(method="Margin", weighted=True)
-        mae_margin_end = time.time()
-        mae_margin_time = mae_margin_end - mae_margin_start
-        
         # Calculate independent metrics CI/IBS/MAE
         indep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                              data_train.time.values, data_train.event.values, copula_name="clayton", alpha=0)
-
-        ci_indep_start = time.time()
-        ci_indep_bg = indep_evaluator.concordance(method="BG")
-        ci_indep_end = time.time()
-        ci_indep_time = ci_indep_end - ci_indep_start
         
         ibs_indep_bg_start_time = time.time()
         ibs_indep_bg = indep_evaluator.integrated_brier_score(method="BG", num_points=10)
@@ -362,21 +358,11 @@ if __name__ == "__main__":
         ibs_indep_bguw = indep_evaluator.integrated_brier_score(method="BG_UW", num_points=10)
         ibs_indep_bguw_end_time = time.time()
         ibs_indep_bguw_time = ibs_indep_bguw_end_time - ibs_indep_bguw_start_time
-            
-        mae_indep_start = time.time()
-        mae_indep_bg = indep_evaluator.mae(method="BG", weighted=True)
-        mae_indep_end = time.time()
-        mae_indep_time = mae_indep_end - mae_indep_start
 
         # Calculate dependent metrics
         dep_evaluator = DependentEvaluator(survival_outputs, time_bins, data_test.time.values, data_test.event.values,
                                            data_train.time.values, data_train.event.values, copula_name=best_copula_name,
                                            alpha=best_copula_theta)
-        
-        ci_dep_start = time.time()
-        ci_dep_bg = dep_evaluator.concordance(method="BG")
-        ci_dep_end = time.time()
-        ci_dep_time = ci_dep_end - ci_dep_start
             
         ibs_dep_bg_start_time = time.time()
         ibs_dep_bg = dep_evaluator.integrated_brier_score(method="BG", num_points=10)
@@ -388,19 +374,12 @@ if __name__ == "__main__":
         ibs_dep_bguw_end_time = time.time()
         ibs_dep_bguw_time = ibs_dep_bguw_end_time - ibs_dep_bguw_start_time
         
-        mae_dep_start = time.time()
-        mae_dep_bg = dep_evaluator.mae(method="BG", weighted=True)
-        mae_dep_end = time.time()
-        mae_dep_time = mae_dep_end - mae_dep_start
-        
         # Create results
         result_row = pd.Series([
             seed, model_name, dataset_name, strategy,
             best_copula_name, best_copula_theta,
             ibs_true, ibs_uncens, ibs_ipcw,
             ibs_indep_bg, ibs_indep_bguw, ibs_dep_bg, ibs_dep_bguw,
-            ci_true, ci_uno, ci_indep_bg, ci_dep_bg,
-            mae_true, mae_margin, mae_indep_bg, mae_dep_bg
         ], index=model_results.columns)
         model_results = pd.concat(
             [model_results, result_row.to_frame().T],
@@ -413,8 +392,6 @@ if __name__ == "__main__":
             copula_runtime, copula_memory_used,
             ibs_uncens_time, ibs_ipcw_time, ibs_indep_bg_time,
             ibs_indep_bguw_time, ibs_dep_bg_time, ibs_dep_bguw_time,
-            ci_uno_time, ci_indep_time, ci_dep_time,
-            mae_margin_time, mae_indep_time, mae_dep_time
         ], index=runtime_log.columns)
 
         runtime_log = pd.concat(
