@@ -6,7 +6,7 @@ from sklearn.utils import shuffle
 from skmultilearn.model_selection import iterative_train_test_split
 from typing import Union, Tuple, Optional, List, Any
 from utility.preprocessor import Preprocessor
-from statsmodels.distributions.copula.api import ClaytonCopula, FrankCopula, GumbelCopula
+from statsmodels.distributions.copula.api import ClaytonCopula, FrankCopula, GumbelCopula, GaussianCopula
 
 import numpy as np
 from scipy.integrate import quad
@@ -178,6 +178,8 @@ def kendall_tau_to_theta(copula_name, k_tau):
         return FrankCopula().theta_from_tau(k_tau)
     elif copula_name == "gumbel":
         return GumbelCopula().theta_from_tau(k_tau)
+    elif copula_name == "gaussian":
+        return GaussianCopula.corr_from_tau(k_tau)
     else:
         raise NotImplementedError('Copula not implemented')
     
@@ -188,6 +190,8 @@ def theta_to_kendall_tau(copula_name, theta):
         return FrankCopula().tau(theta)
     elif copula_name == "gumbel":
         return GumbelCopula().tau(theta)
+    elif copula_name == "gaussian":
+        return GaussianCopula.tau(theta)
     else:
         raise NotImplementedError('Copula not implemented')
     

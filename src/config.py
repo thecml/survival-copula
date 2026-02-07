@@ -6,7 +6,7 @@ PLOTS_DIR = Path.joinpath(ROOT_DIR, 'plots')
 DATA_DIR = Path.joinpath(ROOT_DIR, 'data')
 
 COXPH_PARAMS = {
-    'alpha': 0,
+    'alpha': 0.01,
     'ties': 'breslow',
     'n_iter': 100,
     'tol': 1e-9
