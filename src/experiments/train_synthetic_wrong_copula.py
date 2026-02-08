@@ -141,7 +141,7 @@ def assumed_setting_for_experiment(exp: str, dgp_copula: str, dgp_tau: float):
 
     if exp == "gaussian":
         if dgp_copula == "gaussian":
-            return "clayton", dgp_tau   # your stated design
+            return "clayton", dgp_tau
         return None, None
 
     raise ValueError(exp)
