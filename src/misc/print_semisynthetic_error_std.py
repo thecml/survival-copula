@@ -4,7 +4,7 @@ import numpy as np
 import config as cfg
 
 N_DECIMALS = 3
-SIGMA_LEVEL = 1  # keep as-is
+SIGMA_LEVEL = 1
 
 def calculate_errors(results, dataset, strategy, model_names, metrics):
     true_metrics = {f"{metric}True": metric for metric in ["IBS"]}

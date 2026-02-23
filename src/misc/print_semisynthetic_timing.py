@@ -3,7 +3,6 @@ import numpy as np
 from pathlib import Path
 import config as cfg
 
-# Use ONLY Original strategy
 STRATEGIES = ["original"]
 
 DATASET_ORDER = [

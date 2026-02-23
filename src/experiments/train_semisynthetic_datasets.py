@@ -7,15 +7,13 @@ from data_loader import get_data_loader
 import pandas as pd
 import numpy as np
 import config as cfg
-from metrics import DependentEvaluator
+from evaluator import DependentEvaluator
 from sota.deepsurv import DeepSurv, make_deepsurv_prediction, train_deepsurv_model
 from sota.mtlr import make_mtlr_prediction, mtlr, train_mtlr_model
 from sota.sksurv import make_cox_model, make_gbsa_model, make_rsf_model, make_weibull_aft_model
 from utility.data import dotdict, subsample_dataset, fix_types
 from SurvivalEVAL import SurvivalEvaluator
 from scipy.interpolate import interp1d
-from SurvivalEVAL.Evaluations.util import predict_median_survival_time
-from sksurv.metrics import concordance_index_ipcw
 
 from models import Weibull_model
 from strategies import make_semi_synth

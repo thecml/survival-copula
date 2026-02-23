@@ -1,14 +1,10 @@
 import numpy as np
-import pandas as pd
 import torch
 import matplotlib.pyplot as plt
 from rpy2.robjects.packages import importr
 from rpy2.robjects import pandas2ri
-import config as cfg
 
 from SurvivalEVAL.Evaluations.util import KaplanMeier
-
-from data_loader import SingleEventSyntheticDataLoader
 
 pandas2ri.activate()
 

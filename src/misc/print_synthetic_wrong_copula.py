@@ -4,7 +4,7 @@ import config as cfg
 
 df = pd.read_csv(f"{cfg.RESULTS_DIR}/synthetic_results_wrong_copula.csv")
 
-# --- Settings ---
+# Settings
 z_threshold = 2
 keep_exps = ["family", "dep", "gaussian"]
 copulas_keep = ["clayton", "frank"]
@@ -15,7 +15,7 @@ m_ipcw = "ibs_ipcw_error"
 m_km   = "ibs_indep_bg_error"
 m_cg   = "ibs_dep_bg_error"
 
-# --- Robust z-score filtering ---
+# Robust z-score filtering
 cols_for_z = [
     "ibs_uncens_error", "ibs_ipcw_error", "ibs_indep_bg_error",
     "ibs_dep_bg_error", "ibs_indep_bguw_error", "ibs_dep_bguw_error"
@@ -27,7 +27,7 @@ sd = X.std(axis=0, ddof=0).replace(0, np.nan)
 Z = ((X - mu) / sd).fillna(0.0)
 df = df[(Z.abs() < z_threshold).all(axis=1)].copy()
 
-# --- Restrict ---
+# Restrict
 df = df[
     df["experiment"].isin(keep_exps) &
     df["copula_name"].isin(copulas_keep) &
@@ -37,7 +37,7 @@ df = df[
 exp_order = ["family", "dep", "gaussian"]
 df["experiment"] = pd.Categorical(df["experiment"], categories=exp_order, ordered=True)
 
-# --- Mean/std ---
+# Mean/std
 stats = (
     df.groupby(["copula_name", "k_tau", "experiment"])[[m_ipcw, m_km, m_cg]]
       .agg(["mean", "std"])

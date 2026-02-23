@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import config as cfg
 
 from data_loader import get_data_loader
 from strategies import combine_data_with_censor, make_synthetic_censoring

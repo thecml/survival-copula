@@ -1,15 +1,12 @@
 from typing import List
-from data_loader import MetabricDataLoader
 import pandas as pd
 import numpy as np
-from lifelines import CoxPHFitter, KaplanMeierFitter, WeibullAFTFitter
+from lifelines import CoxPHFitter, KaplanMeierFitter
 from sksurv.ensemble import GradientBoostingSurvivalAnalysis
 from sksurv.linear_model import CoxPHSurvivalAnalysis
-from sksurv.util import Surv
 from sklearn.inspection import permutation_importance
 import config as cfg
 
-from misc.plot_km_curves import compare_km_curves
 from sota.sksurv import make_cox_model
 from utility.data import dotdict
 from utility.survival import convert_to_structured

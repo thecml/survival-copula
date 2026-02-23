@@ -4,14 +4,9 @@ import pandas as pd
 import math
 from sklearn.utils import shuffle
 from skmultilearn.model_selection import iterative_train_test_split
-from typing import Union, Tuple, Optional, List, Any
+from typing import Union, Tuple, Optional, List
 from utility.preprocessor import Preprocessor
 from statsmodels.distributions.copula.api import ClaytonCopula, FrankCopula, GumbelCopula, GaussianCopula
-
-import numpy as np
-from scipy.integrate import quad
-from scipy.optimize import fsolve
-from scipy.optimize import root_scalar
 
 Numeric = Union[float, int, bool]
 NumericArrayLike = Union[List[Numeric], Tuple[Numeric], np.ndarray, pd.Series, pd.DataFrame, torch.Tensor]

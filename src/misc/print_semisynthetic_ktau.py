@@ -1,8 +1,7 @@
 import pandas as pd
 from pathlib import Path
-import numpy as np
 import config as cfg
-from utility.data import get_dataset_info, map_dataset_name, map_strategy_name
+from utility.data import get_dataset_info, map_dataset_name
 from utility.survival import theta_to_kendall_tau
 
 N_DECIMALS = 3
@@ -11,10 +10,6 @@ sigma_level = 1
 if __name__ == "__main__":
     results = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "semisynthetic_results.csv"))
     
-    # Clayton or Frank copula
-    # CI: CIHarrell, CIUno, CIDepIPCW
-    # IBS/MAE: IBSIPCW, IBSBG, IBSDepBG, MAEHinge, MAEPseudo, MAEMargin, MAEDepBG
-    #metrics = ["CIHarrell", "CIUno", "CIDepIPCW"]
     metrics = ["IBSIPCW", "IBSBG", "IBSDepBG", "MAEHinge", "MAEPseudo", "MAEMargin", "MAEDepBG"]
     
     datasets = ["metabric", "mimic_all", "mimic_hospital", "seer_brain", "seer_liver", "seer_stomach"]

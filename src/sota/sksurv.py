@@ -1,9 +1,6 @@
-from sksurv.linear_model import CoxPHSurvivalAnalysis, CoxnetSurvivalAnalysis
+from sksurv.linear_model import CoxPHSurvivalAnalysis
 from sksurv.ensemble import GradientBoostingSurvivalAnalysis
 from sksurv.ensemble import RandomSurvivalForest
-import torch
-import numpy as np
-import pandas as pd
 
 from sota.weibull_aft import WeibullAFTWrapper
 

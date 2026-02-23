@@ -1,6 +1,5 @@
 import pandas as pd
 
-
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
     __getattr__ = dict.get
@@ -45,16 +44,17 @@ def map_dataset_name(dataset_name):
         "gbsg": "GBSG",
         "aids": "AIDS",
         "metabric": "METABRIC",
-        "mimic_all": "MIMIC-IV (all)",
-        "mimic_hospital": "MIMIC-IV (hospital)",
+        "mimic_all": "MIMIC-IV",
+        "mimic_hospital": "MIMIC-IV",
         "nacd": "NACD",
         "support": "SUPPORT",
         "whas": "WHAS",
-        "seer_brain": "SEER (brain)",
-        "seer_breast": "SEER (breast)",
-        "seer_liver": "SEER (liver)",
-        "seer_prostate": "SEER (prostate)",
-        "seer_stomach": "SEER (stomach)",
+        "churn": "Churn",
+        "employee": "Employee",
+        "flchain": "FLCHAIN",
+        "seer_brain": "SEER-brain",
+        "seer_liver": "SEER-liver",
+        "seer_stomach": "SEER-stomach",
     }.get(dataset_name, dataset_name)
     
 def subsample_dataset(df, name, time_col="time", event_col="event",

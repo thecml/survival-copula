@@ -1,9 +1,6 @@
 import pandas as pd
 from pathlib import Path
-import numpy as np
 import config as cfg
-from utility.data import get_dataset_info, map_dataset_name, map_strategy_name
-from utility.survival import theta_to_kendall_tau
 
 N_DECIMALS = 3
 sigma_level = 1

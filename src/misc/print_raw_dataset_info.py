@@ -1,6 +1,4 @@
 import numpy as np
-import pandas as pd
-import config as cfg
 
 from data_loader import get_data_loader
 from utility.preprocessor import Preprocessor

@@ -1,4 +1,3 @@
-import argparse
 import os
 import random
 import torch
@@ -24,8 +23,7 @@ torch.set_default_dtype(dtype)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-dataset_names = ("metabric", "gbsg", "nacd", "support", "flchain", "whas",
-                 "employee", "churn", "mimic_all", "seer_brain", "seer_liver", "seer_stomach")
+dataset_names = ("seer_brain", "seer_liver", "seer_stomach")
 
 if __name__ == "__main__":
     seed = 0
@@ -91,7 +89,7 @@ if __name__ == "__main__":
         n_features = train_dict['X'].shape[1]
         best_loss = float("inf")
 
-        # --- robust timing + peak GPU memory (MiB) ---
+        # robust timing + peak GPU memory (MiB)
         if torch.cuda.is_available():
             torch.cuda.synchronize(device)
             torch.cuda.reset_peak_memory_stats(device)
@@ -102,7 +100,7 @@ if __name__ == "__main__":
         copula_start_time = time.time()
 
         for copula_name in ["clayton", "frank"]:
-            # Reset seeds (keep exactly as you had it)
+            # Reset seeds
             np.random.seed(0)
             torch.manual_seed(0)
             if torch.cuda.is_available():

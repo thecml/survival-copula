@@ -1,3 +1,4 @@
+import os
 import random
 import torch
 import pandas as pd
@@ -5,11 +6,10 @@ import numpy as np
 import config as cfg
 from SurvivalEVAL import SurvivalEvaluator
 from scipy.interpolate import interp1d
-from pycop import simulation
 from scipy.stats import norm
 
 from dgp import DGP_Weibull_linear
-from metrics import DependentEvaluator
+from evaluator import DependentEvaluator
 from sota.sksurv import make_cox_model
 from utility.data import dotdict
 from utility.experiment import _set_global_seeds, _simulate_uv_archimedean, _uv_seed
@@ -449,6 +449,8 @@ if __name__ == "__main__":
         split_seed=0,
         num_points=10,
     )
+    
+    os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
 
     filename = f"{cfg.RESULTS_DIR}/synthetic_results_wrong_copula.csv"
     results_df.to_csv(filename, index=False)

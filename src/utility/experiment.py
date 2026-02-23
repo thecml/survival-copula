@@ -1,8 +1,6 @@
 import numpy as np
-import pandas as pd
 import torch
 import random
-from scipy.interpolate import interp1d
 from pycop import simulation
 from utility.survival import kendall_tau_to_theta
 

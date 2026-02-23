@@ -1,4 +1,4 @@
-import argparse
+import os
 import random
 import torch
 import pandas as pd
@@ -8,14 +8,11 @@ from SurvivalEVAL import SurvivalEvaluator
 from scipy.interpolate import interp1d
 
 from dgp import DGP_Weibull_linear, DGP_Weibull_nonlinear
-from metrics import DependentEvaluator
+from evaluator import DependentEvaluator
 from sota.sksurv import make_cox_model
 from utility.data import dotdict
 from utility.experiment import _set_global_seeds, _simulate_uv_archimedean, _uv_seed
-from utility.survival import (convert_to_structured, kendall_tau_to_theta,
-                              make_stratified_split, make_time_bins)
-
-from sksurv.metrics import concordance_index_ipcw
+from utility.survival import (convert_to_structured, kendall_tau_to_theta, make_time_bins)
 
 np.random.seed(0)
 torch.manual_seed(0)
@@ -425,6 +422,8 @@ if __name__ == "__main__":
         all_results.append(df_res)
 
     results_df = pd.concat(all_results, ignore_index=True)
+    
+    os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
 
     out_path = f"{cfg.RESULTS_DIR}/synthetic_results_censoring.csv"
     results_df.to_csv(out_path, index=False)
