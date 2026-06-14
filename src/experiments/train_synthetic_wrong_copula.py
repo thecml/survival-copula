@@ -23,7 +23,7 @@ dtype = torch.float64
 torch.set_default_dtype(dtype)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-RUN_TAG = "wrong_copula_split_dep_tau05_recalibrated_v2"
+RUN_TAG = "wrong_copula_split_dep_tau05_seedcal_v3"
 print(f"[RUN_TAG] {RUN_TAG}")
 
 data_cfg = {
@@ -132,11 +132,11 @@ def assumed_settings_for_experiment(
     dep_assumed_taus: list[float],
 ):
     """
-    Return assumed (copula, tau) settings for a DGP setting.
+    Return a list of assumed (copula, tau) settings for a DGP setting.
 
     The dependence-strength misspecification experiment is split into two
-    explicit experiment labels, dep_clayton and dep_frank, so the resulting
-    CSV can be plotted as two subfigures without averaging the copula families.
+    labels, dep_clayton and dep_frank, so it can be plotted as two panels
+    without averaging copula families.
     """
     exp = str(exp)
     dgp_copula = str(dgp_copula)
@@ -151,14 +151,12 @@ def assumed_settings_for_experiment(
 
     if exp == "dep_clayton":
         if dgp_copula == "clayton" and np.isclose(dgp_tau, float(dep_true_tau)):
-            return [("clayton", float(tau_assumed))
-                    for tau_assumed in dep_assumed_taus]
+            return [("clayton", float(tau_assumed)) for tau_assumed in dep_assumed_taus]
         return []
 
     if exp == "dep_frank":
         if dgp_copula == "frank" and np.isclose(dgp_tau, float(dep_true_tau)):
-            return [("frank", float(tau_assumed))
-                    for tau_assumed in dep_assumed_taus]
+            return [("frank", float(tau_assumed)) for tau_assumed in dep_assumed_taus]
         return []
 
     if exp == "gaussian":
@@ -243,7 +241,6 @@ def calibrate_alpha_c_mults_by_tau(
                     censoring_rate = float(1.0 - E.mean())
 
                     rows.append({
-                        "run_tag": RUN_TAG,
                         "seed": int(seed),
                         "copula_name": str(copula_name),
                         "k_tau": float(k_tau),
@@ -268,12 +265,24 @@ def calibrate_alpha_c_mults_by_tau(
              .reset_index(drop=True)
     )
 
+    # Choose the censoring multiplier separately for each seed and setting.
+    # This keeps censoring close to target in every replicate, rather than only
+    # on average across heterogeneous seeds.
     chosen = {}
-    for copula_name in copula_names:
-        for k_tau in k_taus:
-            sub = calib_df[(calib_df["copula_name"] == str(copula_name)) & (calib_df["k_tau"] == float(k_tau))]
-            best = float(sub.iloc[0]["alpha_c_mult"])
-            chosen[(str(copula_name), float(k_tau))] = best
+    for seed in pilot_seeds:
+        for copula_name in copula_names:
+            for k_tau in k_taus:
+                sub = calib[
+                    (calib["seed"] == int(seed))
+                    & (calib["copula_name"] == str(copula_name))
+                    & (calib["k_tau"] == float(k_tau))
+                ].copy()
+                if sub.empty:
+                    raise RuntimeError(
+                        f"Missing calibration rows for seed={seed}, copula={copula_name}, tau={k_tau}"
+                    )
+                best_row = sub.sort_values(["abs_err_to_target", "alpha_c_mult"]).iloc[0]
+                chosen[(int(seed), str(copula_name), float(k_tau))] = float(best_row["alpha_c_mult"])
 
     return chosen, calib_df
 
@@ -326,8 +335,8 @@ def run_wrong_copula_experiment(
                 dgp_copula = str(dgp_copula)
                 k_tau = float(k_tau)
 
-                # calibrated censoring multiplier per DGP setting (recommended)
-                mult = float(alpha_c_mult_by_setting[(dgp_copula, k_tau)])
+                # Seed-specific calibrated censoring multiplier for this DGP setting.
+                mult = float(alpha_c_mult_by_setting[(int(seed), dgp_copula, k_tau)])
                 alpha_c = alpha_c_base * mult
 
                 dgp_cens = DGP_Weibull_linear(
@@ -417,6 +426,7 @@ def run_wrong_copula_experiment(
                         ibs_dep_bguw = float(dep_eval.integrated_brier_score(method="BG_UW", num_points=num_points))
 
                         rows.append({
+                            "run_tag": RUN_TAG,
                             "experiment": str(exp),
                             "seed": int(seed),
                             "dgp_copula": str(dgp_copula),
@@ -471,11 +481,26 @@ if __name__ == "__main__":
         dtype=dtype,
         linear=True,
     )
-    
+
+    selected_calib_df = pd.DataFrame([
+        {
+            "seed": int(seed),
+            "copula_name": str(copula_name),
+            "k_tau": float(k_tau),
+            "alpha_c_mult": float(alpha_c_mult_by_setting[(int(seed), str(copula_name), float(k_tau))]),
+        }
+        for seed in PILOT_SEEDS
+        for copula_name in COPULA_NAMES
+        for k_tau in K_TAU
+    ])
+    print("Using seed-specific censoring calibration.")
     print(
-        calib_df.groupby(["copula_name", "k_tau"]).head(1)[
-            ["copula_name", "k_tau", "alpha_c_mult", "censor_rate_mean", "abs_err_mean"]
-        ].to_string(index=False)
+        selected_calib_df.groupby(["copula_name", "k_tau"], as_index=False)
+        .agg(
+            alpha_c_mult_mean=("alpha_c_mult", "mean"),
+            alpha_c_mult_std=("alpha_c_mult", "std"),
+        )
+        .to_string(index=False)
     )
 
     results_df = run_wrong_copula_experiment(
@@ -493,32 +518,20 @@ if __name__ == "__main__":
         split_seed=0,
         num_points=10,
     )
+
+    print("Actual censoring rates in generated results:")
+    print(
+        results_df.groupby(["dgp_copula", "true_k_tau"], as_index=False)
+        .agg(
+            censoring_rate_mean=("censoring_rate", "mean"),
+            censoring_rate_std=("censoring_rate", "std"),
+            censoring_rate_min=("censoring_rate", "min"),
+            censoring_rate_max=("censoring_rate", "max"),
+        )
+        .to_string(index=False)
+    )
     
     os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
 
     filename = f"{cfg.RESULTS_DIR}/synthetic_results_wrong_copula.csv"
     results_df.to_csv(filename, index=False)
-
-    summary_filename = f"{cfg.RESULTS_DIR}/synthetic_summary_wrong_copula.csv"
-    (
-        results_df
-        .groupby([
-            "experiment",
-            "dgp_copula",
-            "true_k_tau",
-            "assumed_copula",
-            "assumed_k_tau",
-        ], as_index=False)
-        .agg(
-            censoring_rate_mean=("censoring_rate", "mean"),
-            censoring_rate_std=("censoring_rate", "std"),
-            err_ipcw_mean=("err_ipcw", "mean"),
-            err_ipcw_std=("err_ipcw", "std"),
-            err_dep_bguw_mean=("err_dep_bguw", "mean"),
-            err_dep_bguw_std=("err_dep_bguw", "std"),
-        )
-        .to_csv(summary_filename, index=False)
-    )
-
-    calib_filename = f"{cfg.RESULTS_DIR}/synthetic_calibration_wrong_copula.csv"
-    calib_df.to_csv(calib_filename, index=False)
