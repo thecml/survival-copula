@@ -467,6 +467,12 @@ if __name__ == "__main__":
         dtype=dtype,
         linear=True,
     )
+    
+    print(
+        calib_df.groupby(["copula_name", "k_tau"]).head(1)[
+            ["copula_name", "k_tau", "alpha_c_mult", "censor_rate_mean", "abs_err_mean"]
+        ].to_string(index=False)
+    )
 
     results_df = run_wrong_copula_experiment(
         data_cfg=data_cfg,
