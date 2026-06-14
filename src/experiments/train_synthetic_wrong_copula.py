@@ -23,6 +23,9 @@ dtype = torch.float64
 torch.set_default_dtype(dtype)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+RUN_TAG = "wrong_copula_split_dep_tau05_recalibrated_v2"
+print(f"[RUN_TAG] {RUN_TAG}")
+
 data_cfg = {
     "alpha_e1": 19,
     "alpha_e2": 17,
@@ -240,6 +243,7 @@ def calibrate_alpha_c_mults_by_tau(
                     censoring_rate = float(1.0 - E.mean())
 
                     rows.append({
+                        "run_tag": RUN_TAG,
                         "seed": int(seed),
                         "copula_name": str(copula_name),
                         "k_tau": float(k_tau),
