@@ -254,52 +254,6 @@ class DependentEvaluator:
 
             brier_scores = np.mean(square_error_mat, axis=0)
 
-        elif method == "CG_Q_COPULA":
-            cg_model = CopulaGraphicWrapper(
-                train_event_times,
-                train_event_indicators,
-                copula_name=copula_name,
-                alpha=alpha,
-            )
-
-            target_times_mat = np.repeat(
-                time_points.reshape(1, -1),
-                repeats=len(event_times),
-                axis=0,
-            )
-
-            event_times_mat = np.repeat(
-                event_times.reshape(-1, 1),
-                repeats=len(time_points),
-                axis=1,
-            )
-
-            observed_mask = event_indicators.astype(bool)
-            censored_mask = ~observed_mask
-
-            q_mat = np.zeros_like(target_times_mat, dtype=float)
-
-            # Observed events have deterministic status.
-            q_mat[observed_mask, :] = (
-                event_times_mat[observed_mask, :] > target_times_mat[observed_mask, :]
-            ).astype(float)
-
-            censored_times = event_times[censored_mask]
-
-            if censored_times.size > 0:
-                q_mat[censored_mask, :] = (
-                    cg_model.conditional_survival_after_censoring_copula(
-                        censored_times,
-                        time_points,
-                    )
-                )
-
-            square_error_mat = (
-                q_mat * np.square(1.0 - predict_probs_mat)
-                + (1.0 - q_mat) * np.square(predict_probs_mat)
-            )
-
-            brier_scores = np.mean(square_error_mat, axis=0)
         else:
             raise NotImplementedError()
 

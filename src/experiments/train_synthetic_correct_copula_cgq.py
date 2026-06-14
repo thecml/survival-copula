@@ -390,7 +390,3 @@ if __name__ == "__main__":
         )
         .to_csv(summary_filename, index=False)
     )
-
-    print(f"Saved row-level results to: {filename}")
-    print(f"Saved summary results to: {summary_filename}")
-    print(f"Saved calibration results to: {calib_filename}")

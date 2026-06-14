@@ -120,29 +120,45 @@ def sample_uv_gaussian(*, n: int, k_tau: float, seed: int) -> tuple[np.ndarray, 
     v = norm.cdf(y)
     return u, v
 
-def assumed_setting_for_experiment(exp: str, dgp_copula: str, dgp_tau: float):
+def assumed_settings_for_experiment(
+    *,
+    exp: str,
+    dgp_copula: str,
+    dgp_tau: float,
+    dep_true_tau: float,
+    dep_assumed_taus: list[float],
+):
+    """
+    Return one or more assumed (copula, tau) settings for a given DGP setting.
+
+    The "dep" experiment is a sensitivity analysis requested by reviewers:
+    the true dependence strength is fixed at dep_true_tau, while the assumed
+    dependence strength is varied over dep_assumed_taus. This replaces the old
+    tau_assumed = 0.8 - tau_true design, which accidentally matched the truth
+    when tau_true = 0.4.
+    """
     exp = str(exp)
     dgp_copula = str(dgp_copula)
     dgp_tau = float(dgp_tau)
 
     if exp == "family":
         if dgp_copula == "clayton":
-            return "frank", dgp_tau
+            return [("frank", dgp_tau)]
         if dgp_copula == "frank":
-            return "clayton", dgp_tau
+            return [("clayton", dgp_tau)]
         # do NOT run family for gaussian DGP
-        return None, None
+        return []
 
     if exp == "dep":
-        if dgp_copula in ["clayton", "frank"]:
-            return dgp_copula, 0.8 - dgp_tau
-        # do NOT run dep for gaussian DGP
-        return None, None
+        if dgp_copula in ["clayton", "frank"] and np.isclose(dgp_tau, float(dep_true_tau)):
+            return [(dgp_copula, float(tau_assumed)) for tau_assumed in dep_assumed_taus]
+        # do NOT run dep for gaussian DGP or for other true tau values
+        return []
 
     if exp == "gaussian":
         if dgp_copula == "gaussian":
-            return "clayton", dgp_tau
-        return None, None
+            return [("clayton", dgp_tau)]
+        return []
 
     raise ValueError(exp)
 
@@ -262,6 +278,8 @@ def run_wrong_copula_experiment(
     k_taus,
     alpha_c_mult_by_setting,
     experiments,
+    dep_true_tau,
+    dep_assumed_taus,
     device,
     dtype,
     train_frac=0.7,
@@ -370,38 +388,45 @@ def run_wrong_copula_experiment(
                 ibs_ipcw = float(ipcw_eval.integrated_brier_score(num_points=num_points))
 
                 for exp in experiments:
-                    assumed_copula, assumed_tau = assumed_setting_for_experiment(
-                        exp=exp, dgp_copula=dgp_copula, dgp_tau=k_tau
+                    assumed_settings = assumed_settings_for_experiment(
+                        exp=exp,
+                        dgp_copula=dgp_copula,
+                        dgp_tau=k_tau,
+                        dep_true_tau=dep_true_tau,
+                        dep_assumed_taus=dep_assumed_taus,
                     )
-                    
-                    if assumed_copula is None:
-                        continue
 
-                    # NOTE: this is the *assumed* copula parameterization, even if wrong
-                    theta = kendall_tau_to_theta(str(assumed_copula), float(assumed_tau))
+                    for assumed_copula, assumed_tau in assumed_settings:
+                        # NOTE: this is the *assumed* copula parameterization, even if wrong
+                        theta = kendall_tau_to_theta(str(assumed_copula), float(assumed_tau))
 
-                    dep_eval = DependentEvaluator(
-                        surv_on_grid, time_bins,
-                        df_test["time"].values, df_test["event"].values,
-                        df_train["time"].values, df_train["event"].values,
-                        copula_name=str(assumed_copula),
-                        alpha=theta,
-                    )
-                    ibs_dep_bguw = float(dep_eval.integrated_brier_score(method="BG_UW", num_points=num_points))
+                        dep_eval = DependentEvaluator(
+                            surv_on_grid, time_bins,
+                            df_test["time"].values, df_test["event"].values,
+                            df_train["time"].values, df_train["event"].values,
+                            copula_name=str(assumed_copula),
+                            alpha=theta,
+                        )
+                        ibs_dep_bguw = float(dep_eval.integrated_brier_score(method="BG_UW", num_points=num_points))
 
-                    rows.append({
-                        "experiment": str(exp),
-                        "seed": int(seed),
-                        "dgp_copula": str(dgp_copula),
-                        "k_tau": float(k_tau),
-                        "assumed_copula": str(assumed_copula),
-                        "assumed_k_tau": float(assumed_tau),
-                        "alpha_c_mult": float(mult),
-                        "alpha_c_used": float(alpha_c),
-                        "censoring_rate": float(censoring_rate),
-                        "err_ipcw": abs(ibs_true - ibs_ipcw),
-                        "err_dep_bguw": abs(ibs_true - ibs_dep_bguw),
-                    })
+                        rows.append({
+                            "experiment": str(exp),
+                            "seed": int(seed),
+                            "dgp_copula": str(dgp_copula),
+                            "k_tau": float(k_tau),
+                            "true_k_tau": float(k_tau),
+                            "assumed_copula": str(assumed_copula),
+                            "assumed_k_tau": float(assumed_tau),
+                            "tau_abs_error": abs(float(k_tau) - float(assumed_tau)),
+                            "alpha_c_mult": float(mult),
+                            "alpha_c_used": float(alpha_c),
+                            "censoring_rate": float(censoring_rate),
+                            "ibs_true": ibs_true,
+                            "ibs_ipcw": ibs_ipcw,
+                            "ibs_dep_bguw": ibs_dep_bguw,
+                            "err_ipcw": abs(ibs_true - ibs_ipcw),
+                            "err_dep_bguw": abs(ibs_true - ibs_dep_bguw),
+                        })
 
     return pd.DataFrame(rows)
 
@@ -410,6 +435,11 @@ if __name__ == "__main__":
     PILOT_SEEDS = list(range(0, 10))
     COPULA_NAMES = ["clayton", "frank", "gaussian"]
     K_TAU = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+
+    # Reviewer-facing dependence-strength sensitivity analysis:
+    # fix true tau and vary the assumed tau used by IBS-Dep.
+    DEP_TRUE_TAU = 0.6
+    DEP_ASSUMED_TAUS = K_TAU
 
     DGP_COPULAS = ["clayton", "frank", "gaussian"]
     experiments = ["family", "dep", "gaussian"]
@@ -443,6 +473,8 @@ if __name__ == "__main__":
         k_taus=K_TAU,
         alpha_c_mult_by_setting=alpha_c_mult_by_setting,
         experiments=experiments,
+        dep_true_tau=DEP_TRUE_TAU,
+        dep_assumed_taus=DEP_ASSUMED_TAUS,
         device=device,
         dtype=dtype,
         train_frac=0.7,
@@ -454,3 +486,21 @@ if __name__ == "__main__":
 
     filename = f"{cfg.RESULTS_DIR}/synthetic_results_wrong_copula.csv"
     results_df.to_csv(filename, index=False)
+
+    summary_filename = f"{cfg.RESULTS_DIR}/synthetic_summary_wrong_copula.csv"
+    (
+        results_df
+        .groupby(["experiment", "dgp_copula", "true_k_tau", "assumed_copula", "assumed_k_tau"], as_index=False)
+        .agg(
+            censoring_rate_mean=("censoring_rate", "mean"),
+            censoring_rate_std=("censoring_rate", "std"),
+            err_ipcw_mean=("err_ipcw", "mean"),
+            err_ipcw_std=("err_ipcw", "std"),
+            err_dep_bguw_mean=("err_dep_bguw", "mean"),
+            err_dep_bguw_std=("err_dep_bguw", "std"),
+        )
+        .to_csv(summary_filename, index=False)
+    )
+
+    calib_filename = f"{cfg.RESULTS_DIR}/synthetic_calibration_wrong_copula.csv"
+    calib_df.to_csv(calib_filename, index=False)
