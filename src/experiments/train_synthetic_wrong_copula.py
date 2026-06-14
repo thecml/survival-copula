@@ -129,13 +129,11 @@ def assumed_settings_for_experiment(
     dep_assumed_taus: list[float],
 ):
     """
-    Return one or more assumed (copula, tau) settings for a given DGP setting.
+    Return assumed (copula, tau) settings for a DGP setting.
 
-    The "dep" experiment is a sensitivity analysis requested by reviewers:
-    the true dependence strength is fixed at dep_true_tau, while the assumed
-    dependence strength is varied over dep_assumed_taus. This replaces the old
-    tau_assumed = 0.8 - tau_true design, which accidentally matched the truth
-    when tau_true = 0.4.
+    The dependence-strength misspecification experiment is split into two
+    explicit experiment labels, dep_clayton and dep_frank, so the resulting
+    CSV can be plotted as two subfigures without averaging the copula families.
     """
     exp = str(exp)
     dgp_copula = str(dgp_copula)
@@ -146,13 +144,18 @@ def assumed_settings_for_experiment(
             return [("frank", dgp_tau)]
         if dgp_copula == "frank":
             return [("clayton", dgp_tau)]
-        # do NOT run family for gaussian DGP
         return []
 
-    if exp == "dep":
-        if dgp_copula in ["clayton", "frank"] and np.isclose(dgp_tau, float(dep_true_tau)):
-            return [(dgp_copula, float(tau_assumed)) for tau_assumed in dep_assumed_taus]
-        # do NOT run dep for gaussian DGP or for other true tau values
+    if exp == "dep_clayton":
+        if dgp_copula == "clayton" and np.isclose(dgp_tau, float(dep_true_tau)):
+            return [("clayton", float(tau_assumed))
+                    for tau_assumed in dep_assumed_taus]
+        return []
+
+    if exp == "dep_frank":
+        if dgp_copula == "frank" and np.isclose(dgp_tau, float(dep_true_tau)):
+            return [("frank", float(tau_assumed))
+                    for tau_assumed in dep_assumed_taus]
         return []
 
     if exp == "gaussian":
@@ -413,7 +416,6 @@ def run_wrong_copula_experiment(
                             "experiment": str(exp),
                             "seed": int(seed),
                             "dgp_copula": str(dgp_copula),
-                            "k_tau": float(k_tau),
                             "true_k_tau": float(k_tau),
                             "assumed_copula": str(assumed_copula),
                             "assumed_k_tau": float(assumed_tau),
@@ -438,11 +440,11 @@ if __name__ == "__main__":
 
     # Reviewer-facing dependence-strength sensitivity analysis:
     # fix true tau and vary the assumed tau used by IBS-Dep.
-    DEP_TRUE_TAU = 0.6
+    DEP_TRUE_TAU = 0.5
     DEP_ASSUMED_TAUS = K_TAU
 
     DGP_COPULAS = ["clayton", "frank", "gaussian"]
-    experiments = ["family", "dep", "gaussian"]
+    experiments = ["family", "dep_clayton", "dep_frank", "gaussian"]
 
     # use a target censoring rate
     TARGET_CENSOR = 0.50
@@ -490,7 +492,13 @@ if __name__ == "__main__":
     summary_filename = f"{cfg.RESULTS_DIR}/synthetic_summary_wrong_copula.csv"
     (
         results_df
-        .groupby(["experiment", "dgp_copula", "true_k_tau", "assumed_copula", "assumed_k_tau"], as_index=False)
+        .groupby([
+            "experiment",
+            "dgp_copula",
+            "true_k_tau",
+            "assumed_copula",
+            "assumed_k_tau",
+        ], as_index=False)
         .agg(
             censoring_rate_mean=("censoring_rate", "mean"),
             censoring_rate_std=("censoring_rate", "std"),
