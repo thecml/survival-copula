@@ -159,21 +159,34 @@ def calibrate_alpha_c_mults_by_tau(
              .reset_index(drop=True)
     )
 
+    # Select the censoring multiplier separately for each seed.
+    # This keeps each experimental replicate close to the target censoring rate
+    # instead of only matching the target on average across seeds.
     chosen = {}
-    for copula_name in copula_names:
-        for k_tau in k_taus:
-            sub = calib_df[(calib_df["copula_name"] == str(copula_name)) & (calib_df["k_tau"] == float(k_tau))]
-            best = float(sub.iloc[0]["alpha_c_mult"])
-            chosen[(str(copula_name), float(k_tau))] = best
+    selected_rows = []
+    for seed in pilot_seeds:
+        for copula_name in copula_names:
+            for k_tau in k_taus:
+                sub = calib[
+                    (calib["seed"] == int(seed)) &
+                    (calib["copula_name"] == str(copula_name)) &
+                    (calib["k_tau"] == float(k_tau))
+                ].copy()
+                best_row = sub.sort_values(["abs_err_to_target", "alpha_c_mult"]).iloc[0]
+                best = float(best_row["alpha_c_mult"])
+                chosen[(int(seed), str(copula_name), float(k_tau))] = best
+                selected_rows.append(best_row.to_dict())
 
-    return chosen, calib_df
+    selected_calib_df = pd.DataFrame(selected_rows)
+
+    return chosen, calib_df, selected_calib_df
 
 def run_bias_vs_tau_experiment(
     data_cfg,
     seeds,
     copula_names,
     k_taus,
-    alpha_c_mult_by_setting,   # <-- NEW: dict[(copula,k_tau)] -> mult
+    alpha_c_mult_by_setting,   # dict[(seed,copula,k_tau)] -> mult
     device,
     dtype,
     train_frac=0.7,
@@ -217,7 +230,7 @@ def run_bias_vs_tau_experiment(
         for copula_name in copula_names:
             for k_tau in k_taus:
                 # pick calibrated alpha_c for this (copula,tau)
-                mult = float(alpha_c_mult_by_setting[(str(copula_name), float(k_tau))])
+                mult = float(alpha_c_mult_by_setting[(int(seed), str(copula_name), float(k_tau))])
                 alpha_c = alpha_c_base * mult
 
                 dgp_cens = DGP_Weibull_linear(
@@ -325,7 +338,7 @@ if __name__ == "__main__":
         np.linspace(2.00, 6.00, 40),
     ]).tolist()
 
-    alpha_c_mult_by_setting, calib_df = calibrate_alpha_c_mults_by_tau(
+    alpha_c_mult_by_setting, calib_df, selected_calib_df = calibrate_alpha_c_mults_by_tau(
         data_cfg=data_cfg,
         pilot_seeds=PILOT_SEEDS,
         copula_names=COPULA_NAMES,
@@ -338,10 +351,18 @@ if __name__ == "__main__":
     )
 
     # optional sanity check
-    print("Chosen alpha_c_mult per (copula,tau):")
-    for c in COPULA_NAMES:
-        for t in K_TAU:
-            print(c, t, alpha_c_mult_by_setting[(c, float(t))])
+    print("Seed-specific censoring calibration summary:")
+    print(
+        selected_calib_df.groupby(["copula_name", "k_tau"], as_index=False)
+        .agg(
+            censor_rate_mean=("censoring_rate", "mean"),
+            censor_rate_std=("censoring_rate", "std"),
+            abs_err_mean=("abs_err_to_target", "mean"),
+            alpha_c_mult_min=("alpha_c_mult", "min"),
+            alpha_c_mult_max=("alpha_c_mult", "max"),
+        )
+        .to_string(index=False)
+    )
 
     results_df = run_bias_vs_tau_experiment(
         data_cfg=data_cfg,
@@ -355,6 +376,18 @@ if __name__ == "__main__":
         split_seed=0,
         num_points=10,
         linear=True,
+    )
+
+    print("Actual censoring rates in generated results:")
+    print(
+        results_df.groupby(["copula_name", "k_tau"], as_index=False)
+        .agg(
+            censoring_rate_mean=("censoring_rate", "mean"),
+            censoring_rate_std=("censoring_rate", "std"),
+            censoring_rate_min=("censoring_rate", "min"),
+            censoring_rate_max=("censoring_rate", "max"),
+        )
+        .to_string(index=False)
     )
     
     os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
