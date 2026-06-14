@@ -1,8 +1,9 @@
 import os
 import random
-import torch
-import pandas as pd
+
 import numpy as np
+import pandas as pd
+import torch
 import config as cfg
 from SurvivalEVAL import SurvivalEvaluator
 from scipy.interpolate import interp1d
@@ -12,7 +13,7 @@ from dgp import DGP_Weibull_linear
 from evaluators import DependentEvaluator
 from sota.sksurv import make_cox_model
 from utility.data import dotdict
-from utility.experiment import _set_global_seeds, _simulate_uv_archimedean, _uv_seed
+from utility.experiment import _set_global_seeds, _uv_seed
 from utility.survival import convert_to_structured, kendall_tau_to_theta, make_time_bins
 
 np.random.seed(0)
@@ -23,7 +24,7 @@ dtype = torch.float64
 torch.set_default_dtype(dtype)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-RUN_TAG = "wrong_copula_split_dep_tau05_seedcal_v3"
+RUN_TAG = "wrong_copula_fixed_event_uniforms_seedcal_v4"
 print(f"[RUN_TAG] {RUN_TAG}")
 
 data_cfg = {
@@ -35,17 +36,13 @@ data_cfg = {
     "n_features": 10,
 }
 
+
 def tau_to_rho_gaussian(k_tau: float) -> float:
+    """Kendall's tau to Gaussian copula Pearson rho."""
     k_tau = float(k_tau)
-    # valid for k_tau in [-1,1]
     rho = np.sin(np.pi * k_tau / 2.0)
     return float(np.clip(rho, -0.999, 0.999))
 
-def kendall_to_pearson(tau: float) -> float:
-    if not -1 <= tau <= 1:
-        raise ValueError("Kendall's tau must be between -1 and 1.")
-    rho = np.sin(np.pi * tau / 2)
-    return rho
 
 def make_train_test_split_indices(n: int, train_frac: float, split_seed: int):
     rng = np.random.default_rng(int(split_seed))
@@ -53,9 +50,96 @@ def make_train_test_split_indices(n: int, train_frac: float, split_seed: int):
     n_train = int(train_frac * n)
     return perm[:n_train], perm[n_train:]
 
-def make_dep_censor_df_for_setting(*, X, dgp_event, dgp_cens, u, v):
-    t_c = dgp_cens.rvs(X, u)  # numpy
-    t_e = dgp_event.rvs(X, v)  # numpy
+
+def make_event_uniforms(*, seed: int, n: int, device, dtype):
+    """
+    Fixed event uniforms per seed.
+
+    These are reused across all copula families and all true Kendall tau values.
+    Consequently, the realized event times and oracle IBS target are kept much
+    more stable when varying dependence strength.
+    """
+    rng = np.random.default_rng(int(seed) + 123_456_789)
+    v_np = rng.uniform(0.0, 1.0, int(n))
+    v_np = np.clip(v_np, 1e-12, 1.0 - 1e-12)
+    return torch.from_numpy(v_np).to(device=device, dtype=dtype)
+
+
+def sample_censor_uniform_given_event_uniform(
+    *,
+    copula_name: str,
+    k_tau: float,
+    seed: int,
+    event_v: torch.Tensor,
+    device,
+    dtype,
+):
+    """
+    Sample censoring uniforms U conditional on fixed event uniforms V.
+
+    This is the core redesign: V is fixed across tau, while U changes with the
+    copula dependence. The resulting event times are fixed across tau, and only
+    censoring becomes more/less dependent on those event times.
+
+    Variables are the uniforms passed to DGP_Weibull_linear.rvs. In this codebase
+    rvs(x, u) uses the survival-uniform inverse t = F^{-1}(u | x) in the sense
+    S(t | x)=u, but the copula construction only needs them to be Uniform(0,1).
+    """
+    copula_name = str(copula_name)
+    k_tau = float(k_tau)
+    n = int(event_v.numel())
+
+    v = event_v.detach().cpu().numpy().astype(float)
+    v = np.clip(v, 1e-12, 1.0 - 1e-12)
+
+    rng = np.random.default_rng(int(_uv_seed(int(seed), float(k_tau), copula_name)) + 987_654_321)
+    w = rng.uniform(0.0, 1.0, n)
+    w = np.clip(w, 1e-12, 1.0 - 1e-12)
+
+    if k_tau == 0.0:
+        u = w
+
+    elif copula_name == "gaussian":
+        rho = tau_to_rho_gaussian(k_tau)
+        z_v = norm.ppf(v)
+        z_w = norm.ppf(w)
+        z_u = rho * z_v + np.sqrt(1.0 - rho * rho) * z_w
+        u = norm.cdf(z_u)
+
+    elif copula_name == "clayton":
+        theta = float(kendall_tau_to_theta("clayton", k_tau))
+        theta = max(theta, 1e-12)
+        # w = dC(u,v)/dv = v^(-theta-1) * A^(-1/theta-1)
+        # A = u^(-theta) + v^(-theta) - 1
+        A = (w * (v ** (theta + 1.0))) ** (-theta / (1.0 + theta))
+        u_neg_theta = A - (v ** (-theta)) + 1.0
+        u_neg_theta = np.maximum(u_neg_theta, 1e-12)
+        u = u_neg_theta ** (-1.0 / theta)
+
+    elif copula_name == "frank":
+        theta = float(kendall_tau_to_theta("frank", k_tau))
+        theta = max(theta, 1e-12)
+        # For Frank, solve w = dC(u,v)/dv for a = exp(-theta*u).
+        # Let b=exp(-theta*v), d=exp(-theta)-1, y=a-1:
+        # w = b*y / (d + y*(b-1)) => y = w*d / (b - w*(b-1)).
+        b = np.exp(-theta * v)
+        d = np.exp(-theta) - 1.0
+        denom = b - w * (b - 1.0)
+        denom = np.where(np.abs(denom) < 1e-12, np.sign(denom) * 1e-12, denom)
+        a = 1.0 + (w * d / denom)
+        a = np.clip(a, np.exp(-theta) + 1e-12, 1.0 - 1e-12)
+        u = -np.log(a) / theta
+
+    else:
+        raise ValueError(f"Unknown copula_name={copula_name}")
+
+    u = np.clip(u, 1e-12, 1.0 - 1e-12)
+    return torch.from_numpy(u).to(device=device, dtype=dtype)
+
+
+def make_dep_censor_df_for_setting(*, X, dgp_event, dgp_cens, u_censor, v_event):
+    t_c = dgp_cens.rvs(X, u_censor)  # numpy
+    t_e = dgp_event.rvs(X, v_event)  # numpy; fixed across tau for a seed
 
     T = np.minimum(t_e, t_c)
     E = (t_e < t_c).astype(int)
@@ -69,59 +153,6 @@ def make_dep_censor_df_for_setting(*, X, dgp_event, dgp_cens, u, v):
     df = df.replace([np.inf, -np.inf], np.nan).dropna(subset=["time", "true_time"]).reset_index(drop=True)
     return df
 
-def sample_uv(*, copula_name: str, k_tau: float, seed: int, n: int, device, dtype):
-    copula_name = None if copula_name is None else str(copula_name)
-    k_tau = float(k_tau)
-
-    # One deterministic seed per (seed, tau, copula)
-    base_seed = int(_uv_seed(int(seed), float(k_tau), str(copula_name)))
-    rng = np.random.default_rng(base_seed)
-
-    # Independence branch (still seeded by base_seed above)
-    if copula_name is None or k_tau == 0.0:
-        u_np = rng.uniform(0.0, 1.0, n)
-        v_np = rng.uniform(0.0, 1.0, n)
-
-    elif copula_name in ["clayton", "frank"]:
-        # keep your existing archimedean simulator
-        uv_seed = _uv_seed(int(seed), float(k_tau), copula_name)
-        u_np, v_np = _simulate_uv_archimedean(copula_name, n, float(k_tau), uv_seed)
-
-    elif copula_name == "gaussian":
-        rho = tau_to_rho_gaussian(k_tau)
-
-        z1 = rng.standard_normal(n)
-        z2 = rng.standard_normal(n)
-        x = z1
-        y = rho * z1 + np.sqrt(1.0 - rho * rho) * z2
-
-        u_np = norm.cdf(x)
-        v_np = norm.cdf(y)
-
-    else:
-        raise ValueError(f"Unknown copula_name={copula_name}")
-
-    u = torch.from_numpy(np.asarray(u_np)).to(device=device, dtype=dtype)
-    v = torch.from_numpy(np.asarray(v_np)).to(device=device, dtype=dtype)
-    return u, v
-
-def tau_to_rho_gaussian(k_tau: float) -> float:
-    k_tau = float(k_tau)
-    rho = np.sin(np.pi * k_tau / 2.0)
-    return float(np.clip(rho, -0.999, 0.999))
-
-def sample_uv_gaussian(*, n: int, k_tau: float, seed: int) -> tuple[np.ndarray, np.ndarray]:
-    rng = np.random.default_rng(int(seed))
-    rho = tau_to_rho_gaussian(k_tau)
-
-    z1 = rng.standard_normal(n)
-    z2 = rng.standard_normal(n)
-    x = z1
-    y = rho * z1 + np.sqrt(1.0 - rho * rho) * z2
-
-    u = norm.cdf(x)
-    v = norm.cdf(y)
-    return u, v
 
 def assumed_settings_for_experiment(
     *,
@@ -131,13 +162,6 @@ def assumed_settings_for_experiment(
     dep_true_tau: float,
     dep_assumed_taus: list[float],
 ):
-    """
-    Return a list of assumed (copula, tau) settings for a DGP setting.
-
-    The dependence-strength misspecification experiment is split into two
-    labels, dep_clayton and dep_frank, so it can be plotted as two panels
-    without averaging copula families.
-    """
     exp = str(exp)
     dgp_copula = str(dgp_copula)
     dgp_tau = float(dgp_tau)
@@ -166,6 +190,7 @@ def assumed_settings_for_experiment(
 
     raise ValueError(exp)
 
+
 def calibrate_alpha_c_mults_by_tau(
     *,
     data_cfg,
@@ -173,28 +198,28 @@ def calibrate_alpha_c_mults_by_tau(
     copula_names,
     k_taus,
     mult_grid,
-    target_censoring,   # e.g. 0.50 or 0.70
+    target_censoring,
     device,
     dtype,
     linear=True,
     hidden_dim=32,
 ):
     """
-    For each (copula, k_tau), choose alpha_c_mult that makes censoring_rate close to target_censoring
-    averaged across pilot_seeds.
-    Returns:
-      chosen[(copula, k_tau)] = best_mult
-      calib_df with mean/std censoring per candidate mult
-    """
-    assert linear, "Nonlinear version not implemented here (same idea, but reuse weights and change alpha)."
+    Seed-specific calibration with fixed event uniforms.
 
-    n_samples  = int(data_cfg["n_samples"])
+    Returns:
+      chosen[(seed, copula, k_tau)] = best_mult
+      calib_df = all calibration rows
+    """
+    assert linear, "Nonlinear version not implemented here."
+
+    n_samples = int(data_cfg["n_samples"])
     n_features = int(data_cfg["n_features"])
 
     alpha_c_base = float(data_cfg["alpha_e1"])
-    gamma_c      = float(data_cfg["gamma_e1"])
-    alpha_e      = float(data_cfg["alpha_e2"])
-    gamma_e      = float(data_cfg["gamma_e2"])
+    gamma_c = float(data_cfg["gamma_e1"])
+    alpha_e = float(data_cfg["alpha_e2"])
+    gamma_e = float(data_cfg["gamma_e2"])
 
     rows = []
 
@@ -205,42 +230,40 @@ def calibrate_alpha_c_mults_by_tau(
         g.manual_seed(int(seed))
 
         X = torch.rand((n_samples, n_features), generator=g, device=device, dtype=dtype)
-
         beta_event = 2 * torch.rand((n_features,), generator=g, device=device, dtype=dtype) - 1
-        beta_cens  = 2 * torch.rand((n_features,), generator=g, device=device, dtype=dtype) - 1
+        beta_cens = 2 * torch.rand((n_features,), generator=g, device=device, dtype=dtype) - 1
 
         dgp_event = DGP_Weibull_linear(
             n_features, alpha_e, gamma_e, use_x=True,
-            device=device, dtype=dtype, coeff=beta_event
+            device=device, dtype=dtype, coeff=beta_event,
         )
+
+        v_event = make_event_uniforms(seed=int(seed), n=n_samples, device=device, dtype=dtype)
+        t_e = dgp_event.rvs(X, v_event)
 
         for copula_name in copula_names:
             for k_tau in k_taus:
-                # sample (u,v)
-                u, v = sample_uv(
+                u_censor = sample_censor_uniform_given_event_uniform(
                     copula_name=str(copula_name),
                     k_tau=float(k_tau),
                     seed=int(seed),
-                    n=n_samples,
+                    event_v=v_event,
                     device=device,
                     dtype=dtype,
                 )
-
-                # event times are fixed for this (seed,copula,tau)
-                t_e = dgp_event.rvs(X, v)
 
                 for mult in mult_grid:
                     alpha_c = alpha_c_base * float(mult)
                     dgp_cens = DGP_Weibull_linear(
                         n_features, alpha_c, gamma_c, use_x=True,
-                        device=device, dtype=dtype, coeff=beta_cens
+                        device=device, dtype=dtype, coeff=beta_cens,
                     )
-                    t_c = dgp_cens.rvs(X, u)
-
+                    t_c = dgp_cens.rvs(X, u_censor)
                     E = (t_e < t_c).astype(np.float64)
                     censoring_rate = float(1.0 - E.mean())
 
                     rows.append({
+                        "run_tag": RUN_TAG,
                         "seed": int(seed),
                         "copula_name": str(copula_name),
                         "k_tau": float(k_tau),
@@ -255,20 +278,18 @@ def calibrate_alpha_c_mults_by_tau(
 
     calib_df = (
         calib.groupby(["copula_name", "k_tau", "alpha_c_mult"], as_index=False)
-             .agg(
-                 censor_rate_mean=("censoring_rate", "mean"),
-                 censor_rate_std=("censoring_rate", "std"),
-                 abs_err_mean=("abs_err_to_target", "mean"),
-                 alpha_c_used_mean=("alpha_c_used", "mean"),
-             )
-             .sort_values(["copula_name", "k_tau", "abs_err_mean", "alpha_c_mult"])
-             .reset_index(drop=True)
+        .agg(
+            censor_rate_mean=("censoring_rate", "mean"),
+            censor_rate_std=("censoring_rate", "std"),
+            abs_err_mean=("abs_err_to_target", "mean"),
+            alpha_c_used_mean=("alpha_c_used", "mean"),
+        )
+        .sort_values(["copula_name", "k_tau", "abs_err_mean", "alpha_c_mult"])
+        .reset_index(drop=True)
     )
 
-    # Choose the censoring multiplier separately for each seed and setting.
-    # This keeps censoring close to target in every replicate, rather than only
-    # on average across heterogeneous seeds.
     chosen = {}
+    selected_rows = []
     for seed in pilot_seeds:
         for copula_name in copula_names:
             for k_tau in k_taus:
@@ -282,9 +303,13 @@ def calibrate_alpha_c_mults_by_tau(
                         f"Missing calibration rows for seed={seed}, copula={copula_name}, tau={k_tau}"
                     )
                 best_row = sub.sort_values(["abs_err_to_target", "alpha_c_mult"]).iloc[0]
-                chosen[(int(seed), str(copula_name), float(k_tau))] = float(best_row["alpha_c_mult"])
+                best_mult = float(best_row["alpha_c_mult"])
+                chosen[(int(seed), str(copula_name), float(k_tau))] = best_mult
+                selected_rows.append(best_row.to_dict())
 
-    return chosen, calib_df
+    selected_calib_df = pd.DataFrame(selected_rows)
+    return chosen, calib_df, selected_calib_df
+
 
 def run_wrong_copula_experiment(
     *,
@@ -321,45 +346,53 @@ def run_wrong_copula_experiment(
         g.manual_seed(int(seed))
 
         X = torch.rand((n_samples, n_features), generator=g, device=device, dtype=dtype)
-
         beta_event = 2 * torch.rand((n_features,), generator=g, device=device, dtype=dtype) - 1
-        beta_cens  = 2 * torch.rand((n_features,), generator=g, device=device, dtype=dtype) - 1
+        beta_cens = 2 * torch.rand((n_features,), generator=g, device=device, dtype=dtype) - 1
 
         dgp_event = DGP_Weibull_linear(
             n_features, alpha_e, gamma_e, use_x=True,
-            device=device, dtype=dtype, coeff=beta_event
+            device=device, dtype=dtype, coeff=beta_event,
         )
+
+        v_event = make_event_uniforms(seed=int(seed), n=n_samples, device=device, dtype=dtype)
 
         for dgp_copula in dgp_copulas:
             for k_tau in k_taus:
                 dgp_copula = str(dgp_copula)
                 k_tau = float(k_tau)
 
-                # Seed-specific calibrated censoring multiplier for this DGP setting.
                 mult = float(alpha_c_mult_by_setting[(int(seed), dgp_copula, k_tau)])
                 alpha_c = alpha_c_base * mult
 
                 dgp_cens = DGP_Weibull_linear(
                     n_features, alpha_c, gamma_c, use_x=True,
-                    device=device, dtype=dtype, coeff=beta_cens
+                    device=device, dtype=dtype, coeff=beta_cens,
                 )
 
-                # sample (u,v) from the DGP copula
-                u, v = sample_uv(
-                    copula_name=dgp_copula, k_tau=k_tau, seed=seed, n=n_samples,
-                    device=device, dtype=dtype
+                u_censor = sample_censor_uniform_given_event_uniform(
+                    copula_name=dgp_copula,
+                    k_tau=k_tau,
+                    seed=int(seed),
+                    event_v=v_event,
+                    device=device,
+                    dtype=dtype,
                 )
 
-                df = make_dep_censor_df_for_setting(X=X, dgp_event=dgp_event, dgp_cens=dgp_cens, u=u, v=v)
+                df = make_dep_censor_df_for_setting(
+                    X=X,
+                    dgp_event=dgp_event,
+                    dgp_cens=dgp_cens,
+                    u_censor=u_censor,
+                    v_event=v_event,
+                )
 
-                # keep split logic identical to correct experiment
                 if len(df) != n_samples:
                     tr, te = make_train_test_split_indices(len(df), train_frac, split_seed)
                     df_train = df.iloc[tr].copy()
-                    df_test  = df.iloc[te].copy()
+                    df_test = df.iloc[te].copy()
                 else:
                     df_train = df.iloc[train_idx].copy()
-                    df_test  = df.iloc[test_idx].copy()
+                    df_test = df.iloc[test_idx].copy()
 
                 censoring_rate = float(1.0 - df["event"].mean())
 
@@ -368,7 +401,7 @@ def run_wrong_copula_experiment(
 
                 y_train = convert_to_structured(df_train["time"], df_train["event"])
                 X_train = df_train[features]
-                X_test  = df_test[features]
+                X_test = df_test[features]
 
                 time_bins = make_time_bins(df_train["true_time"].values, event=None, dtype=dtype).to(device)
                 time_bins = torch.cat((torch.tensor([0.0], device=device, dtype=dtype), time_bins)).cpu().numpy()
@@ -391,11 +424,9 @@ def run_wrong_copula_experiment(
                 surv_on_grid = pd.DataFrame(S, columns=time_bins)
                 surv_on_grid[0.0] = 1.0
 
-                # "Truth" uses true event times (no censoring)
                 true_eval = SurvivalEvaluator(surv_on_grid, time_bins, true_test_time, true_test_event)
                 ibs_true = float(true_eval.integrated_brier_score(IPCW_weighted=False, num_points=num_points))
 
-                # IPCW baseline
                 ipcw_eval = SurvivalEvaluator(
                     surv_on_grid, time_bins,
                     df_test["time"].values, df_test["event"].values,
@@ -413,7 +444,6 @@ def run_wrong_copula_experiment(
                     )
 
                     for assumed_copula, assumed_tau in assumed_settings:
-                        # NOTE: this is the *assumed* copula parameterization, even if wrong
                         theta = kendall_tau_to_theta(str(assumed_copula), float(assumed_tau))
 
                         dep_eval = DependentEvaluator(
@@ -440,11 +470,14 @@ def run_wrong_copula_experiment(
                             "ibs_true": ibs_true,
                             "ibs_ipcw": ibs_ipcw,
                             "ibs_dep_bguw": ibs_dep_bguw,
+                            "bias_ipcw": ibs_ipcw - ibs_true,
+                            "bias_dep_bguw": ibs_dep_bguw - ibs_true,
                             "err_ipcw": abs(ibs_true - ibs_ipcw),
                             "err_dep_bguw": abs(ibs_true - ibs_dep_bguw),
                         })
 
     return pd.DataFrame(rows)
+
 
 if __name__ == "__main__":
     SEEDS = list(range(0, 10))
@@ -452,25 +485,21 @@ if __name__ == "__main__":
     COPULA_NAMES = ["clayton", "frank", "gaussian"]
     K_TAU = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
 
-    # Reviewer-facing dependence-strength sensitivity analysis:
-    # fix true tau and vary the assumed tau used by IBS-Dep.
     DEP_TRUE_TAU = 0.5
     DEP_ASSUMED_TAUS = K_TAU
 
     DGP_COPULAS = ["clayton", "frank", "gaussian"]
     experiments = ["family", "dep_clayton", "dep_frank", "gaussian"]
 
-    # use a target censoring rate
     TARGET_CENSOR = 0.50
 
-    # grid of multipliers to search over
     mult_grid = np.concatenate([
         np.linspace(0.05, 0.50, 40),
         np.linspace(0.50, 2.00, 60),
         np.linspace(2.00, 6.00, 40),
     ]).tolist()
 
-    alpha_c_mult_by_setting, calib_df = calibrate_alpha_c_mults_by_tau(
+    alpha_c_mult_by_setting, calib_df, selected_calib_df = calibrate_alpha_c_mults_by_tau(
         data_cfg=data_cfg,
         pilot_seeds=PILOT_SEEDS,
         copula_names=COPULA_NAMES,
@@ -482,23 +511,14 @@ if __name__ == "__main__":
         linear=True,
     )
 
-    selected_calib_df = pd.DataFrame([
-        {
-            "seed": int(seed),
-            "copula_name": str(copula_name),
-            "k_tau": float(k_tau),
-            "alpha_c_mult": float(alpha_c_mult_by_setting[(int(seed), str(copula_name), float(k_tau))]),
-        }
-        for seed in PILOT_SEEDS
-        for copula_name in COPULA_NAMES
-        for k_tau in K_TAU
-    ])
-    print("Using seed-specific censoring calibration.")
+    print("Using fixed event uniforms and seed-specific censoring calibration.")
     print(
         selected_calib_df.groupby(["copula_name", "k_tau"], as_index=False)
         .agg(
             alpha_c_mult_mean=("alpha_c_mult", "mean"),
             alpha_c_mult_std=("alpha_c_mult", "std"),
+            censoring_rate_mean=("censoring_rate", "mean"),
+            censoring_rate_std=("censoring_rate", "std"),
         )
         .to_string(index=False)
     )
@@ -527,10 +547,22 @@ if __name__ == "__main__":
             censoring_rate_std=("censoring_rate", "std"),
             censoring_rate_min=("censoring_rate", "min"),
             censoring_rate_max=("censoring_rate", "max"),
+            ibs_true_mean=("ibs_true", "mean"),
+            ibs_true_std=("ibs_true", "std"),
         )
         .to_string(index=False)
     )
-    
+
+    print("Oracle IBS stability by seed/copuIa family:")
+    print(
+        results_df.groupby(["seed", "dgp_copula"], as_index=False)
+        .agg(ibs_true_min=("ibs_true", "min"), ibs_true_max=("ibs_true", "max"))
+        .assign(ibs_true_range=lambda d: d["ibs_true_max"] - d["ibs_true_min"])
+        .groupby("dgp_copula", as_index=False)
+        .agg(mean_within_seed_range=("ibs_true_range", "mean"), max_within_seed_range=("ibs_true_range", "max"))
+        .to_string(index=False)
+    )
+
     os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
 
     filename = f"{cfg.RESULTS_DIR}/synthetic_results_wrong_copula.csv"
