@@ -1,11 +1,7 @@
 #!/bin/bash
+set -euo pipefail
 
-base_path=$(dirname "$0")            # relative
-base_path=$(cd "$MY_PATH" && pwd)    # absolutized and normalized
-if [[ -z "$base_path" ]] ; then  # error; for some reason, the path is not accessible
-  # to the script (e.g. permissions re-evaled after suid)
-  exit 1  # fail
-fi
+base_path="$(cd "$(dirname "$0")" && pwd)"
 echo "$base_path"
 
 results_path=$base_path/../results/semisynthetic_results.csv
