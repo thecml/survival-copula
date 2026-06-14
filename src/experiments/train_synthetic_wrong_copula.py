@@ -298,6 +298,17 @@ def calibrate_alpha_c_mults_by_tau(
                     & (calib["copula_name"] == str(copula_name))
                     & (calib["k_tau"] == float(k_tau))
                 ].copy()
+                if sub.empty:
+                    raise RuntimeError(
+                        f"Missing calibration rows for seed={seed}, copula={copula_name}, tau={k_tau}"
+                    )
+                best_row = sub.sort_values(["abs_err_to_target", "alpha_c_mult"]).iloc[0]
+                best_mult = float(best_row["alpha_c_mult"])
+                chosen[(int(seed), str(copula_name), float(k_tau))] = best_mult
+                selected_rows.append(best_row.to_dict())
+
+    selected_calib_df = pd.DataFrame(selected_rows)
+    return chosen, calib_df, selected_calib_df
 
 def run_wrong_copula_experiment(
     *,
