@@ -1,3 +1,11 @@
+"""Synthetic dependent-censoring experiment comparing BG_UW against CG_Q.
+
+This is intentionally a minimal variant of train_synthetic_correct_copula.py:
+the DGP, copula calibration, train/test split, CoxPH model, and true IBS
+reference are unchanged. Only the dependent-evaluator methods and output files
+are changed.
+"""
+
 import os
 import random
 import torch
@@ -6,7 +14,6 @@ import numpy as np
 import config as cfg
 from SurvivalEVAL import SurvivalEvaluator
 from scipy.interpolate import interp1d
-from scipy.stats import norm
 
 from dgp import DGP_Weibull_linear
 from evaluators import DependentEvaluator
@@ -24,33 +31,21 @@ torch.set_default_dtype(dtype)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 data_cfg = {
-    "alpha_e1": 19,
-    "alpha_e2": 17,
-    "gamma_e1": 6,
-    "gamma_e2": 4,
+    "alpha_e1": 19,  # censor alpha base
+    "alpha_e2": 17,  # event alpha
+    "gamma_e1": 6,   # censor gamma
+    "gamma_e2": 4,   # event gamma
     "n_samples": 10000,
     "n_features": 10,
 }
 
-def tau_to_rho_gaussian(k_tau: float) -> float:
-    k_tau = float(k_tau)
-    # valid for k_tau in [-1,1]
-    rho = np.sin(np.pi * k_tau / 2.0)
-    return float(np.clip(rho, -0.999, 0.999))
-
-def kendall_to_pearson(tau: float) -> float:
-    if not -1 <= tau <= 1:
-        raise ValueError("Kendall's tau must be between -1 and 1.")
-    rho = np.sin(np.pi * tau / 2)
-    return rho
-
-def make_train_test_split_indices(n: int, train_frac: float, split_seed: int):
-    rng = np.random.default_rng(int(split_seed))
-    perm = rng.permutation(n)
-    n_train = int(train_frac * n)
-    return perm[:n_train], perm[n_train:]
-
-def make_dep_censor_df_for_setting(*, X, dgp_event, dgp_cens, u, v):
+def make_dep_censor_df_for_setting(
+    X: torch.Tensor,
+    dgp_event,
+    dgp_cens,
+    u: torch.Tensor,
+    v: torch.Tensor,
+):
     t_c = dgp_cens.rvs(X, u)  # numpy
     t_e = dgp_event.rvs(X, v)  # numpy
 
@@ -66,88 +61,13 @@ def make_dep_censor_df_for_setting(*, X, dgp_event, dgp_cens, u, v):
     df = df.replace([np.inf, -np.inf], np.nan).dropna(subset=["time", "true_time"]).reset_index(drop=True)
     return df
 
-def sample_uv(*, copula_name: str, k_tau: float, seed: int, n: int, device, dtype):
-    copula_name = None if copula_name is None else str(copula_name)
-    k_tau = float(k_tau)
-
-    # One deterministic seed per (seed, tau, copula)
-    base_seed = int(_uv_seed(int(seed), float(k_tau), str(copula_name)))
-    rng = np.random.default_rng(base_seed)
-
-    # Independence branch (still seeded by base_seed above)
-    if copula_name is None or k_tau == 0.0:
-        u_np = rng.uniform(0.0, 1.0, n)
-        v_np = rng.uniform(0.0, 1.0, n)
-
-    elif copula_name in ["clayton", "frank"]:
-        # keep your existing archimedean simulator
-        uv_seed = _uv_seed(int(seed), float(k_tau), copula_name)
-        u_np, v_np = _simulate_uv_archimedean(copula_name, n, float(k_tau), uv_seed)
-
-    elif copula_name == "gaussian":
-        rho = tau_to_rho_gaussian(k_tau)
-
-        z1 = rng.standard_normal(n)
-        z2 = rng.standard_normal(n)
-        x = z1
-        y = rho * z1 + np.sqrt(1.0 - rho * rho) * z2
-
-        u_np = norm.cdf(x)
-        v_np = norm.cdf(y)
-
-    else:
-        raise ValueError(f"Unknown copula_name={copula_name}")
-
-    u = torch.from_numpy(np.asarray(u_np)).to(device=device, dtype=dtype)
-    v = torch.from_numpy(np.asarray(v_np)).to(device=device, dtype=dtype)
-    return u, v
-
-def tau_to_rho_gaussian(k_tau: float) -> float:
-    k_tau = float(k_tau)
-    rho = np.sin(np.pi * k_tau / 2.0)
-    return float(np.clip(rho, -0.999, 0.999))
-
-def sample_uv_gaussian(*, n: int, k_tau: float, seed: int) -> tuple[np.ndarray, np.ndarray]:
-    rng = np.random.default_rng(int(seed))
-    rho = tau_to_rho_gaussian(k_tau)
-
-    z1 = rng.standard_normal(n)
-    z2 = rng.standard_normal(n)
-    x = z1
-    y = rho * z1 + np.sqrt(1.0 - rho * rho) * z2
-
-    u = norm.cdf(x)
-    v = norm.cdf(y)
-    return u, v
-
-def assumed_setting_for_experiment(exp: str, dgp_copula: str, dgp_tau: float):
-    exp = str(exp)
-    dgp_copula = str(dgp_copula)
-    dgp_tau = float(dgp_tau)
-
-    if exp == "family":
-        if dgp_copula == "clayton":
-            return "frank", dgp_tau
-        if dgp_copula == "frank":
-            return "clayton", dgp_tau
-        # do NOT run family for gaussian DGP
-        return None, None
-
-    if exp == "dep":
-        if dgp_copula in ["clayton", "frank"]:
-            return dgp_copula, 0.8 - dgp_tau
-        # do NOT run dep for gaussian DGP
-        return None, None
-
-    if exp == "gaussian":
-        if dgp_copula == "gaussian":
-            return "clayton", dgp_tau
-        return None, None
-
-    raise ValueError(exp)
+def make_train_test_split_indices(n: int, train_frac: float, split_seed: int):
+    rng = np.random.default_rng(int(split_seed))
+    perm = rng.permutation(n)
+    n_train = int(train_frac * n)
+    return perm[:n_train], perm[n_train:]
 
 def calibrate_alpha_c_mults_by_tau(
-    *,
     data_cfg,
     pilot_seeds,
     copula_names,
@@ -197,14 +117,16 @@ def calibrate_alpha_c_mults_by_tau(
         for copula_name in copula_names:
             for k_tau in k_taus:
                 # sample (u,v)
-                u, v = sample_uv(
-                    copula_name=str(copula_name),
-                    k_tau=float(k_tau),
-                    seed=int(seed),
-                    n=n_samples,
-                    device=device,
-                    dtype=dtype,
-                )
+                if float(k_tau) == 0.0:
+                    rng = np.random.default_rng(int(_uv_seed(int(seed), float(k_tau), str(copula_name))))
+                    u_np = rng.uniform(0.0, 1.0, n_samples)
+                    v_np = rng.uniform(0.0, 1.0, n_samples)
+                else:
+                    uv_seed = _uv_seed(int(seed), float(k_tau), str(copula_name))
+                    u_np, v_np = _simulate_uv_archimedean(str(copula_name), n_samples, float(k_tau), uv_seed)
+
+                u = torch.from_numpy(u_np).to(device=device, dtype=dtype)
+                v = torch.from_numpy(v_np).to(device=device, dtype=dtype)
 
                 # event times are fixed for this (seed,copula,tau)
                 t_e = dgp_event.rvs(X, v)
@@ -254,26 +176,26 @@ def calibrate_alpha_c_mults_by_tau(
 
     return chosen, calib_df
 
-def run_wrong_copula_experiment(
-    *,
+def run_bguw_vs_cgq_experiment(
     data_cfg,
     seeds,
-    dgp_copulas,
+    copula_names,
     k_taus,
-    alpha_c_mult_by_setting,
-    experiments,
+    alpha_c_mult_by_setting,   # <-- NEW: dict[(copula,k_tau)] -> mult
     device,
     dtype,
     train_frac=0.7,
     split_seed=0,
     num_points=10,
+    linear=True,
+    hidden_dim=32,
 ):
     rows = []
 
     n_samples = int(data_cfg["n_samples"])
     n_features = int(data_cfg["n_features"])
 
-    alpha_c_base = float(data_cfg["alpha_e1"])
+    alpha_c_base = float(data_cfg["alpha_e1"])   # <-- base, will be multiplied
     gamma_c = float(data_cfg["gamma_e1"])
     alpha_e = float(data_cfg["alpha_e2"])
     gamma_e = float(data_cfg["gamma_e2"])
@@ -283,26 +205,27 @@ def run_wrong_copula_experiment(
 
     for seed in seeds:
         _set_global_seeds(int(seed))
+
         g = torch.Generator(device=device)
         g.manual_seed(int(seed))
 
         X = torch.rand((n_samples, n_features), generator=g, device=device, dtype=dtype)
 
-        beta_event = 2 * torch.rand((n_features,), generator=g, device=device, dtype=dtype) - 1
-        beta_cens  = 2 * torch.rand((n_features,), generator=g, device=device, dtype=dtype) - 1
+        if linear:
+            beta_event = 2 * torch.rand((n_features,), generator=g, device=device, dtype=dtype) - 1
+            beta_cens  = 2 * torch.rand((n_features,), generator=g, device=device, dtype=dtype) - 1
 
-        dgp_event = DGP_Weibull_linear(
-            n_features, alpha_e, gamma_e, use_x=True,
-            device=device, dtype=dtype, coeff=beta_event
-        )
+            dgp_event = DGP_Weibull_linear(
+                n_features, alpha_e, gamma_e, use_x=True,
+                device=device, dtype=dtype, coeff=beta_event
+            )
+        else:
+            raise NotImplementedError("Add the nonlinear version later (same calibration idea).")
 
-        for dgp_copula in dgp_copulas:
+        for copula_name in copula_names:
             for k_tau in k_taus:
-                dgp_copula = str(dgp_copula)
-                k_tau = float(k_tau)
-
-                # calibrated censoring multiplier per DGP setting (recommended)
-                mult = float(alpha_c_mult_by_setting[(dgp_copula, k_tau)])
+                # pick calibrated alpha_c for this (copula,tau)
+                mult = float(alpha_c_mult_by_setting[(str(copula_name), float(k_tau))])
                 alpha_c = alpha_c_base * mult
 
                 dgp_cens = DGP_Weibull_linear(
@@ -310,15 +233,20 @@ def run_wrong_copula_experiment(
                     device=device, dtype=dtype, coeff=beta_cens
                 )
 
-                # sample (u,v) from the DGP copula
-                u, v = sample_uv(
-                    copula_name=dgp_copula, k_tau=k_tau, seed=seed, n=n_samples,
-                    device=device, dtype=dtype
-                )
+                # sample (u,v)
+                if float(k_tau) == 0.0:
+                    rng = np.random.default_rng(int(_uv_seed(int(seed), float(k_tau), str(copula_name))))
+                    u_np = rng.uniform(0.0, 1.0, n_samples)
+                    v_np = rng.uniform(0.0, 1.0, n_samples)
+                else:
+                    uv_seed = _uv_seed(int(seed), float(k_tau), str(copula_name))
+                    u_np, v_np = _simulate_uv_archimedean(str(copula_name), n_samples, float(k_tau), uv_seed)
+
+                u = torch.from_numpy(u_np).to(device=device, dtype=dtype)
+                v = torch.from_numpy(v_np).to(device=device, dtype=dtype)
 
                 df = make_dep_censor_df_for_setting(X=X, dgp_event=dgp_event, dgp_cens=dgp_cens, u=u, v=v)
 
-                # keep split logic identical to correct experiment
                 if len(df) != n_samples:
                     tr, te = make_train_test_split_indices(len(df), train_frac, split_seed)
                     df_train = df.iloc[tr].copy()
@@ -351,68 +279,50 @@ def run_wrong_copula_experiment(
                 spline = interp1d(
                     model.unique_times_, surv, kind="linear",
                     bounds_error=False,
-                    fill_value=(1.0, surv[:, -1]),
+                    fill_value=(1.0, surv[:, -1])
                 )
                 S = np.clip(spline(time_bins), 0.0, 1.0)
                 surv_on_grid = pd.DataFrame(S, columns=time_bins)
                 surv_on_grid[0.0] = 1.0
 
-                # "Truth" uses true event times (no censoring)
                 true_eval = SurvivalEvaluator(surv_on_grid, time_bins, true_test_time, true_test_event)
                 ibs_true = float(true_eval.integrated_brier_score(IPCW_weighted=False, num_points=num_points))
 
-                # IPCW baseline
-                ipcw_eval = SurvivalEvaluator(
+                theta = kendall_tau_to_theta(str(copula_name), float(k_tau))
+                dep_eval = DependentEvaluator(
                     surv_on_grid, time_bins,
                     df_test["time"].values, df_test["event"].values,
                     df_train["time"].values, df_train["event"].values,
+                    copula_name=str(copula_name), alpha=theta
                 )
-                ibs_ipcw = float(ipcw_eval.integrated_brier_score(num_points=num_points))
+                ibs_dep_bguw = float(dep_eval.integrated_brier_score(method="BG_UW", num_points=num_points))
+                ibs_dep_cgq = float(dep_eval.integrated_brier_score(method="CG_Q", num_points=num_points))
 
-                for exp in experiments:
-                    assumed_copula, assumed_tau = assumed_setting_for_experiment(
-                        exp=exp, dgp_copula=dgp_copula, dgp_tau=k_tau
-                    )
-                    
-                    if assumed_copula is None:
-                        continue
+                err_dep_bguw = abs(ibs_true - ibs_dep_bguw)
+                err_dep_cgq = abs(ibs_true - ibs_dep_cgq)
 
-                    # NOTE: this is the *assumed* copula parameterization, even if wrong
-                    theta = kendall_tau_to_theta(str(assumed_copula), float(assumed_tau))
-
-                    dep_eval = DependentEvaluator(
-                        surv_on_grid, time_bins,
-                        df_test["time"].values, df_test["event"].values,
-                        df_train["time"].values, df_train["event"].values,
-                        copula_name=str(assumed_copula),
-                        alpha=theta,
-                    )
-                    ibs_dep_bguw = float(dep_eval.integrated_brier_score(method="BG_UW", num_points=num_points))
-
-                    rows.append({
-                        "experiment": str(exp),
-                        "seed": int(seed),
-                        "dgp_copula": str(dgp_copula),
-                        "k_tau": float(k_tau),
-                        "assumed_copula": str(assumed_copula),
-                        "assumed_k_tau": float(assumed_tau),
-                        "alpha_c_mult": float(mult),
-                        "alpha_c_used": float(alpha_c),
-                        "censoring_rate": float(censoring_rate),
-                        "err_ipcw": abs(ibs_true - ibs_ipcw),
-                        "err_dep_bguw": abs(ibs_true - ibs_dep_bguw),
-                    })
+                rows.append({
+                    "seed": int(seed),
+                    "copula_name": str(copula_name),
+                    "k_tau": float(k_tau),
+                    "alpha_c_mult": float(mult),
+                    "alpha_c_used": float(alpha_c),
+                    "censoring_rate": float(censoring_rate),
+                    "ibs_true": ibs_true,
+                    "ibs_dep_bguw": ibs_dep_bguw,
+                    "ibs_dep_cgq": ibs_dep_cgq,
+                    "err_dep_bguw": err_dep_bguw,
+                    "err_dep_cgq": err_dep_cgq,
+                    "delta_err_cgq_minus_bguw": err_dep_cgq - err_dep_bguw,
+                })
 
     return pd.DataFrame(rows)
 
 if __name__ == "__main__":
     SEEDS = list(range(0, 10))
     PILOT_SEEDS = list(range(0, 10))
-    COPULA_NAMES = ["clayton", "frank", "gaussian"]
+    COPULA_NAMES = ["clayton", "frank"]
     K_TAU = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
-
-    DGP_COPULAS = ["clayton", "frank", "gaussian"]
-    experiments = ["family", "dep", "gaussian"]
 
     # use a target censoring rate
     TARGET_CENSOR = 0.50
@@ -436,21 +346,51 @@ if __name__ == "__main__":
         linear=True,
     )
 
-    results_df = run_wrong_copula_experiment(
+    # optional sanity check
+    print("Chosen alpha_c_mult per (copula,tau):")
+    for c in COPULA_NAMES:
+        for t in K_TAU:
+            print(c, t, alpha_c_mult_by_setting[(c, float(t))])
+
+    results_df = run_bguw_vs_cgq_experiment(
         data_cfg=data_cfg,
         seeds=SEEDS,
-        dgp_copulas=DGP_COPULAS,
+        copula_names=COPULA_NAMES,
         k_taus=K_TAU,
         alpha_c_mult_by_setting=alpha_c_mult_by_setting,
-        experiments=experiments,
         device=device,
         dtype=dtype,
         train_frac=0.7,
         split_seed=0,
         num_points=10,
+        linear=True,
     )
     
     os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
 
-    filename = f"{cfg.RESULTS_DIR}/synthetic_results_wrong_copula.csv"
+    calib_filename = f"{cfg.RESULTS_DIR}/synthetic_calibration_bguw_vs_cgq.csv"
+    calib_df.to_csv(calib_filename, index=False)
+
+    filename = f"{cfg.RESULTS_DIR}/synthetic_results_bguw_vs_cgq.csv"
     results_df.to_csv(filename, index=False)
+
+    summary_filename = f"{cfg.RESULTS_DIR}/synthetic_summary_bguw_vs_cgq.csv"
+    (
+        results_df
+        .groupby(["copula_name", "k_tau"], as_index=False)
+        .agg(
+            censoring_rate_mean=("censoring_rate", "mean"),
+            censoring_rate_std=("censoring_rate", "std"),
+            err_dep_bguw_mean=("err_dep_bguw", "mean"),
+            err_dep_bguw_std=("err_dep_bguw", "std"),
+            err_dep_cgq_mean=("err_dep_cgq", "mean"),
+            err_dep_cgq_std=("err_dep_cgq", "std"),
+            delta_err_cgq_minus_bguw_mean=("delta_err_cgq_minus_bguw", "mean"),
+            delta_err_cgq_minus_bguw_std=("delta_err_cgq_minus_bguw", "std"),
+        )
+        .to_csv(summary_filename, index=False)
+    )
+
+    print(f"Saved row-level results to: {filename}")
+    print(f"Saved summary results to: {summary_filename}")
+    print(f"Saved calibration results to: {calib_filename}")

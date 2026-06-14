@@ -16,4 +16,5 @@ fi
 # Synthetic datasets
 python3 $base_path/../src/experiments/train_synthetic_censoring.py
 python3 $base_path/../src/experiments/train_synthetic_correct_copula.py
+python3 $base_path/../src/experiments/train_synthetic_correct_copula_cgq.py
 python3 $base_path/../src/experiments/train_synthetic_wrong_copula.py

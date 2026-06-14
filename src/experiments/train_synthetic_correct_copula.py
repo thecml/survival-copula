@@ -8,7 +8,7 @@ from SurvivalEVAL import SurvivalEvaluator
 from scipy.interpolate import interp1d
 
 from dgp import DGP_Weibull_linear
-from evaluator import DependentEvaluator
+from evaluators import DependentEvaluator
 from sota.sksurv import make_cox_model
 from utility.data import dotdict
 from utility.experiment import _set_global_seeds, _simulate_uv_archimedean, _uv_seed
@@ -32,7 +32,6 @@ data_cfg = {
 }
 
 def make_dep_censor_df_for_setting(
-    *,
     X: torch.Tensor,
     dgp_event,
     dgp_cens,
@@ -61,7 +60,6 @@ def make_train_test_split_indices(n: int, train_frac: float, split_seed: int):
     return perm[:n_train], perm[n_train:]
 
 def calibrate_alpha_c_mults_by_tau(
-    *,
     data_cfg,
     pilot_seeds,
     copula_names,
@@ -171,7 +169,6 @@ def calibrate_alpha_c_mults_by_tau(
     return chosen, calib_df
 
 def run_bias_vs_tau_experiment(
-    *,
     data_cfg,
     seeds,
     copula_names,
