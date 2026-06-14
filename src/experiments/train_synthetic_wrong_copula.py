@@ -24,7 +24,7 @@ dtype = torch.float64
 torch.set_default_dtype(dtype)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-RUN_TAG = "wrong_copula_fixed_event_uniforms_seedcal_v4"
+RUN_TAG = "wrong_copula_fixed_event_fixed_model_seedcal_v5"
 print(f"[RUN_TAG] {RUN_TAG}")
 
 data_cfg = {
@@ -298,18 +298,6 @@ def calibrate_alpha_c_mults_by_tau(
                     & (calib["copula_name"] == str(copula_name))
                     & (calib["k_tau"] == float(k_tau))
                 ].copy()
-                if sub.empty:
-                    raise RuntimeError(
-                        f"Missing calibration rows for seed={seed}, copula={copula_name}, tau={k_tau}"
-                    )
-                best_row = sub.sort_values(["abs_err_to_target", "alpha_c_mult"]).iloc[0]
-                best_mult = float(best_row["alpha_c_mult"])
-                chosen[(int(seed), str(copula_name), float(k_tau))] = best_mult
-                selected_rows.append(best_row.to_dict())
-
-    selected_calib_df = pd.DataFrame(selected_rows)
-    return chosen, calib_df, selected_calib_df
-
 
 def run_wrong_copula_experiment(
     *,
@@ -327,6 +315,12 @@ def run_wrong_copula_experiment(
     split_seed=0,
     num_points=10,
 ):
+    """Run misspecification experiment with fixed event times and fixed model predictions.
+
+    For each seed, event times and the prediction model are fixed once. Only the
+    observed censoring process changes with the DGP copula/tau. This isolates
+    evaluation-metric behavior from changes in the fitted survival model.
+    """
     rows = []
 
     n_samples = int(data_cfg["n_samples"])
@@ -354,7 +348,47 @@ def run_wrong_copula_experiment(
             device=device, dtype=dtype, coeff=beta_event,
         )
 
+        # Fixed event uniforms and true event times for this seed.
         v_event = make_event_uniforms(seed=int(seed), n=n_samples, device=device, dtype=dtype)
+        true_event_time = dgp_event.rvs(X, v_event)
+        true_event_time = np.where(true_event_time <= 0, 1.0, true_event_time)
+
+        X_np = X.detach().cpu().numpy()
+        X_df = pd.DataFrame(X_np, columns=features)
+
+        X_train_fixed = X_df.iloc[train_idx].copy()
+        X_test_fixed = X_df.iloc[test_idx].copy()
+        true_train_time = true_event_time[train_idx]
+        true_test_time = true_event_time[test_idx]
+        true_train_event = np.ones(len(train_idx), dtype=int)
+        true_test_event = np.ones(len(test_idx), dtype=int)
+
+        # Fixed prediction model: fit once per seed on uncensored/oracle event times.
+        y_train_oracle = convert_to_structured(true_train_time, true_train_event)
+
+        time_bins = make_time_bins(true_train_time, event=None, dtype=dtype).to(device)
+        time_bins = torch.cat((torch.tensor([0.0], device=device, dtype=dtype), time_bins)).cpu().numpy()
+        t_star = np.quantile(true_test_time, 0.9)
+        time_bins = time_bins[time_bins <= t_star]
+
+        config = dotdict(cfg.COXPH_PARAMS)
+        model = make_cox_model(config)
+        model.fit(X_train_fixed, y_train_oracle)
+
+        surv_fns = model.predict_survival_function(X_test_fixed)
+        surv = np.row_stack([fn(model.unique_times_) for fn in surv_fns])
+
+        spline = interp1d(
+            model.unique_times_, surv, kind="linear",
+            bounds_error=False,
+            fill_value=(1.0, surv[:, -1]),
+        )
+        S = np.clip(spline(time_bins), 0.0, 1.0)
+        surv_on_grid = pd.DataFrame(S, columns=time_bins)
+        surv_on_grid[0.0] = 1.0
+
+        true_eval = SurvivalEvaluator(surv_on_grid, time_bins, true_test_time, true_test_event)
+        ibs_true = float(true_eval.integrated_brier_score(IPCW_weighted=False, num_points=num_points))
 
         for dgp_copula in dgp_copulas:
             for k_tau in k_taus:
@@ -378,59 +412,22 @@ def run_wrong_copula_experiment(
                     dtype=dtype,
                 )
 
-                df = make_dep_censor_df_for_setting(
-                    X=X,
-                    dgp_event=dgp_event,
-                    dgp_cens=dgp_cens,
-                    u_censor=u_censor,
-                    v_event=v_event,
-                )
+                censor_time = dgp_cens.rvs(X, u_censor)
+                censor_time = np.where(censor_time <= 0, 1.0, censor_time)
+                observed_time = np.minimum(true_event_time, censor_time)
+                observed_event = (true_event_time < censor_time).astype(int)
 
-                if len(df) != n_samples:
-                    tr, te = make_train_test_split_indices(len(df), train_frac, split_seed)
-                    df_train = df.iloc[tr].copy()
-                    df_test = df.iloc[te].copy()
-                else:
-                    df_train = df.iloc[train_idx].copy()
-                    df_test = df.iloc[test_idx].copy()
+                censoring_rate = float(1.0 - observed_event.mean())
 
-                censoring_rate = float(1.0 - df["event"].mean())
-
-                true_test_time = df_test["true_time"].values
-                true_test_event = np.ones(df_test.shape[0], dtype=int)
-
-                y_train = convert_to_structured(df_train["time"], df_train["event"])
-                X_train = df_train[features]
-                X_test = df_test[features]
-
-                time_bins = make_time_bins(df_train["true_time"].values, event=None, dtype=dtype).to(device)
-                time_bins = torch.cat((torch.tensor([0.0], device=device, dtype=dtype), time_bins)).cpu().numpy()
-                t_star = np.quantile(df_test["true_time"].values, 0.9)
-                time_bins = time_bins[time_bins <= t_star]
-
-                config = dotdict(cfg.COXPH_PARAMS)
-                model = make_cox_model(config)
-                model.fit(X_train, y_train)
-
-                surv_fns = model.predict_survival_function(X_test)
-                surv = np.row_stack([fn(model.unique_times_) for fn in surv_fns])
-
-                spline = interp1d(
-                    model.unique_times_, surv, kind="linear",
-                    bounds_error=False,
-                    fill_value=(1.0, surv[:, -1]),
-                )
-                S = np.clip(spline(time_bins), 0.0, 1.0)
-                surv_on_grid = pd.DataFrame(S, columns=time_bins)
-                surv_on_grid[0.0] = 1.0
-
-                true_eval = SurvivalEvaluator(surv_on_grid, time_bins, true_test_time, true_test_event)
-                ibs_true = float(true_eval.integrated_brier_score(IPCW_weighted=False, num_points=num_points))
+                train_time = observed_time[train_idx]
+                train_event = observed_event[train_idx]
+                test_time = observed_time[test_idx]
+                test_event = observed_event[test_idx]
 
                 ipcw_eval = SurvivalEvaluator(
                     surv_on_grid, time_bins,
-                    df_test["time"].values, df_test["event"].values,
-                    df_train["time"].values, df_train["event"].values,
+                    test_time, test_event,
+                    train_time, train_event,
                 )
                 ibs_ipcw = float(ipcw_eval.integrated_brier_score(num_points=num_points))
 
@@ -448,8 +445,8 @@ def run_wrong_copula_experiment(
 
                         dep_eval = DependentEvaluator(
                             surv_on_grid, time_bins,
-                            df_test["time"].values, df_test["event"].values,
-                            df_train["time"].values, df_train["event"].values,
+                            test_time, test_event,
+                            train_time, train_event,
                             copula_name=str(assumed_copula),
                             alpha=theta,
                         )
@@ -457,6 +454,7 @@ def run_wrong_copula_experiment(
 
                         rows.append({
                             "run_tag": RUN_TAG,
+                            "prediction_model": "oracle_fixed_per_seed",
                             "experiment": str(exp),
                             "seed": int(seed),
                             "dgp_copula": str(dgp_copula),
@@ -477,8 +475,6 @@ def run_wrong_copula_experiment(
                         })
 
     return pd.DataFrame(rows)
-
-
 if __name__ == "__main__":
     SEEDS = list(range(0, 10))
     PILOT_SEEDS = list(range(0, 10))
@@ -565,5 +561,5 @@ if __name__ == "__main__":
 
     os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
 
-    filename = f"{cfg.RESULTS_DIR}/synthetic_results_wrong_copula.csv"
+    filename = f"{cfg.RESULTS_DIR}/synthetic_results_wrong_copula_fixed_model.csv"
     results_df.to_csv(filename, index=False)
