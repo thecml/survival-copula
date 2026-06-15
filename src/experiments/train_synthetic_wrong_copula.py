@@ -182,7 +182,7 @@ def assumed_settings_for_experiment(
 
     if exp == "gaussian":
         if dgp_copula == "gaussian":
-            return [("clayton", dgp_tau)]
+            return [("clayton", dgp_tau), ("frank", dgp_tau)]
         return []
 
     raise ValueError(exp)
@@ -567,5 +567,5 @@ if __name__ == "__main__":
 
     os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
 
-    filename = f"{cfg.RESULTS_DIR}/synthetic_results_wrong_copula.csv"
+    filename = f"{cfg.RESULTS_DIR}/synthetic_results_wrong_copula_fixed_model.csv"
     results_df.to_csv(filename, index=False)
