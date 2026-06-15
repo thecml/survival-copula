@@ -24,9 +24,6 @@ dtype = torch.float64
 torch.set_default_dtype(dtype)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-RUN_TAG = "wrong_copula_fixed_event_fixed_model_seedcal_v5"
-print(f"[RUN_TAG] {RUN_TAG}")
-
 data_cfg = {
     "alpha_e1": 19,
     "alpha_e2": 17,
@@ -263,7 +260,6 @@ def calibrate_alpha_c_mults_by_tau(
                     censoring_rate = float(1.0 - E.mean())
 
                     rows.append({
-                        "run_tag": RUN_TAG,
                         "seed": int(seed),
                         "copula_name": str(copula_name),
                         "k_tau": float(k_tau),
@@ -464,7 +460,6 @@ def run_wrong_copula_experiment(
                         ibs_dep_bguw = float(dep_eval.integrated_brier_score(method="BG_UW", num_points=num_points))
 
                         rows.append({
-                            "run_tag": RUN_TAG,
                             "prediction_model": "oracle_fixed_per_seed",
                             "experiment": str(exp),
                             "seed": int(seed),
@@ -572,5 +567,5 @@ if __name__ == "__main__":
 
     os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
 
-    filename = f"{cfg.RESULTS_DIR}/synthetic_results_wrong_copula_fixed_model.csv"
+    filename = f"{cfg.RESULTS_DIR}/synthetic_results_wrong_copula.csv"
     results_df.to_csv(filename, index=False)

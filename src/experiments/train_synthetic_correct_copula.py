@@ -24,9 +24,6 @@ dtype = torch.float64
 torch.set_default_dtype(dtype)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-RUN_TAG = "correct_copula_fixed_event_fixed_model_seedcal_v5"
-print(f"[RUN_TAG] {RUN_TAG}")
-
 data_cfg = {
     "alpha_e1": 19,  # censor alpha base
     "alpha_e2": 17,  # event alpha
@@ -417,7 +414,6 @@ def run_bias_vs_tau_experiment(
                 bias_dep_bguw = ibs_dep_bguw - ibs_true
 
                 rows.append({
-                    "run_tag": RUN_TAG,
                     "prediction_model": "oracle_fixed_per_seed",
                     "seed": int(seed),
                     "copula_name": str(copula_name),
