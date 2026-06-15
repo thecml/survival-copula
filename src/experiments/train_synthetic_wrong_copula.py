@@ -485,7 +485,7 @@ if __name__ == "__main__":
     SEEDS = list(range(0, 10))
     PILOT_SEEDS = list(range(0, 10))
     COPULA_NAMES = ["clayton", "frank", "gaussian"]
-    K_TAU = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+    K_TAU = [0.0, 0.25, 0.5, 0.8]
 
     DEP_TRUE_TAU = 0.5
     DEP_ASSUMED_TAUS = K_TAU
