@@ -505,9 +505,10 @@ class IndependentEvaluator:
         # G_hat(t | X_i), used for individuals known to be event-free at t.
         G_at_target_mat = self._predict_censor_survival_matrix(target_times)
 
-        G_at_event_mat[G_at_event_mat <= 0] = np.inf
-        G_at_target_mat[G_at_target_mat <= 0] = np.inf
-
+        eps = 1e-3  # or 1e-2 for stronger truncation
+        G_at_event_mat = np.clip(G_at_event_mat, eps, 1.0)
+        G_at_target_mat = np.clip(G_at_target_mat, eps, 1.0)
+        
         weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat) / G_at_event_mat
         weight_cat2 = (event_times_mat > target_times_mat) / G_at_target_mat
 

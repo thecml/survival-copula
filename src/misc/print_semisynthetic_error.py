@@ -66,7 +66,8 @@ if __name__ == "__main__":
     }
     
     metric_variants = [
-        ("IBSIPCW", "IPCW"),
+        ("IBSIPCW", "IPCW (KM)"),
+        ("IBSIPCW_CoxPH", "IPCW (CoxPH)"),
         ("IBSIndepBG", "Dep (KM)"),
         ("IBSDepBG", "Dep (CG)"),
         ("IBSDepBGUW", r"Dep (CG)$^{\text{UW}}$"),
