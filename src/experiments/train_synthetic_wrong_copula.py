@@ -567,5 +567,5 @@ if __name__ == "__main__":
 
     os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
 
-    filename = f"{cfg.RESULTS_DIR}/synthetic_results_wrong_copula_fixed_model.csv"
+    filename = f"{cfg.RESULTS_DIR}/synthetic_results_wrong_copula.csv"
     results_df.to_csv(filename, index=False)
