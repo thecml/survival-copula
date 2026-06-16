@@ -359,7 +359,16 @@ class IndependentEvaluator:
         self.censor_penalizer = float(censor_penalizer)
         self._censor_model = None
         self._constant_censor_survival = None
+        self._km_censor_times = None
+        self._km_censor_survival = None
+        self._censor_fit_status = None
+        self._cox_fit_error = None
 
+        # Lifelines CoxPH is very sensitive to non-finite values, constant
+        # columns and extreme scaling. Clean the train/test frames once so the
+        # censoring model sees a stable design matrix with identical columns in
+        # train and test.
+        self._sanitize_feature_frames()
         self._fit_censoring_model()
 
     @staticmethod
@@ -372,6 +381,80 @@ class IndependentEvaluator:
         X.columns = [str(c) if str(c) not in ["__time", "__censor_event"] else f"{prefix}{j}"
                      for j, c in enumerate(X.columns)]
         return X.astype(float)
+
+    def _sanitize_feature_frames(self):
+        """Make train/test covariates safe for lifelines CoxPH.
+
+        The conditional IPCW censoring model is a nuisance model. It should not
+        make the whole experiment fail because of a constant column, an inf, or
+        a badly scaled feature. We therefore apply deterministic preprocessing:
+        replace inf with nan, impute by train medians, drop constant columns,
+        and standardize using train statistics.
+        """
+        X_train = self.train_features.replace([np.inf, -np.inf], np.nan).copy()
+        X_test = self.test_features.replace([np.inf, -np.inf], np.nan).copy()
+
+        med = X_train.median(axis=0, skipna=True).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        X_train = X_train.fillna(med)
+        X_test = X_test.fillna(med)
+
+        # Drop zero/near-zero variance columns using train statistics only.
+        std = X_train.std(axis=0, ddof=0).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        keep_cols = std[std > 1e-12].index.tolist()
+
+        if len(keep_cols) == 0:
+            # No usable covariates; use marginal censoring KM below.
+            self.train_features = X_train.iloc[:, :0].copy()
+            self.test_features = X_test.iloc[:, :0].copy()
+            return
+
+        X_train = X_train[keep_cols]
+        X_test = X_test[keep_cols]
+
+        mu = X_train.mean(axis=0)
+        sd = X_train.std(axis=0, ddof=0).replace(0.0, 1.0)
+
+        self.train_features = ((X_train - mu) / sd).astype(float)
+        self.test_features = ((X_test - mu) / sd).astype(float)
+
+    @staticmethod
+    def _fit_marginal_km(times: np.ndarray, event_indicators: np.ndarray):
+        """Kaplan-Meier survival for the censoring distribution.
+
+        Here event_indicators=1 means observed censoring. Returns step-function
+        support times and survival values G(t)=P(C>t).
+        """
+        times = np.asarray(times, dtype=float)
+        event_indicators = np.asarray(event_indicators, dtype=bool)
+        mask = np.isfinite(times) & (times >= 0)
+        times = times[mask]
+        event_indicators = event_indicators[mask]
+
+        event_times = np.sort(np.unique(times[event_indicators]))
+        if event_times.size == 0:
+            return np.array([], dtype=float), np.array([], dtype=float)
+
+        surv_vals = []
+        surv = 1.0
+        for t in event_times:
+            at_risk = np.sum(times >= t)
+            n_events = np.sum((times == t) & event_indicators)
+            if at_risk > 0:
+                surv *= max(0.0, 1.0 - n_events / at_risk)
+            surv_vals.append(surv)
+
+        return event_times.astype(float), np.asarray(surv_vals, dtype=float)
+
+    @staticmethod
+    def _km_predict(times: np.ndarray, km_times: np.ndarray, km_survival: np.ndarray) -> np.ndarray:
+        times = np.asarray(times, dtype=float)
+        if km_times is None or km_survival is None or len(km_times) == 0:
+            return np.ones_like(times, dtype=float)
+        idx = np.searchsorted(km_times, times, side="right") - 1
+        out = np.ones_like(times, dtype=float)
+        valid = idx >= 0
+        out[valid] = km_survival[idx[valid]]
+        return out
 
     @property
     def predicted_curves(self):
@@ -421,34 +504,80 @@ class IndependentEvaluator:
         if np.sum(censor_events) == 0:
             # No observed censoring in train: G(t | X) = 1 on the observed support.
             self._constant_censor_survival = 1.0
+            self._censor_fit_status = "constant_no_censoring"
+            return
+
+        # If all covariates were dropped, use marginal KM rather than failing.
+        if self.train_features.shape[1] == 0:
+            self._km_censor_times, self._km_censor_survival = self._fit_marginal_km(
+                self.train_event_times,
+                censor_events,
+            )
+            self._censor_fit_status = "km_fallback_no_covariates"
+            warnings.warn(
+                "CoxPH censoring model has no usable covariates after preprocessing; "
+                "falling back to marginal KM censoring survival for IPCW (CoxPH)."
+            )
             return
 
         df_censor = self.train_features.copy()
         df_censor["__time"] = self.train_event_times
         df_censor["__censor_event"] = censor_events
+        df_censor = df_censor.replace([np.inf, -np.inf], np.nan).dropna(axis=0)
 
-        # Lifelines can be sensitive to separation/collinearity, so retry with
-        # stronger ridge penalization before failing.
+        if df_censor["__censor_event"].sum() == 0:
+            self._constant_censor_survival = 1.0
+            self._censor_fit_status = "constant_no_censoring_after_cleaning"
+            return
+
+        # Lifelines can be sensitive to separation/collinearity. Retry with
+        # stronger ridge penalization and smaller Newton steps before falling
+        # back to marginal KM. The fallback keeps the semisynthetic sweep from
+        # crashing because CoxPH is only a nuisance model for IPCW.
         last_error = None
-        for penalizer in [self.censor_penalizer, 0.1, 1.0, 10.0]:
-            try:
-                model = CoxPHFitter(penalizer=penalizer)
-                model.fit(
-                    df_censor,
-                    duration_col="__time",
-                    event_col="__censor_event",
-                    show_progress=False,
-                )
-                self._censor_model = model
-                self.censor_penalizer = float(penalizer)
-                return
-            except Exception as exc:  # lifelines raises several convergence-related errors
-                last_error = exc
+        penalizers = [self.censor_penalizer, 0.1, 1.0, 10.0, 100.0]
+        fit_options_list = [
+            None,
+            {"step_size": 0.5},
+            {"step_size": 0.25},
+            {"step_size": 0.1},
+        ]
 
-        raise RuntimeError(
-            "CoxPH censoring model failed to fit, even with stronger penalization. "
-            f"Last error: {last_error}"
+        for penalizer in penalizers:
+            for fit_options in fit_options_list:
+                try:
+                    model = CoxPHFitter(penalizer=float(penalizer))
+                    fit_kwargs = dict(
+                        duration_col="__time",
+                        event_col="__censor_event",
+                        show_progress=False,
+                    )
+                    if fit_options is not None:
+                        fit_kwargs["fit_options"] = fit_options
+
+                    model.fit(df_censor, **fit_kwargs)
+                    self._censor_model = model
+                    self.censor_penalizer = float(penalizer)
+                    self._censor_fit_status = "coxph"
+                    return
+                except Exception as exc:  # lifelines raises several convergence-related errors
+                    last_error = exc
+
+        # Robust fallback: marginal KM censoring survival. This is less targeted
+        # than conditional IPCW, but finite and preferable to terminating the
+        # whole run. Keep the original error for diagnostics.
+        self._cox_fit_error = last_error
+        self._km_censor_times, self._km_censor_survival = self._fit_marginal_km(
+            self.train_event_times,
+            censor_events,
         )
+        self._censor_fit_status = "km_fallback_coxph_failed"
+        warnings.warn(
+            "CoxPH censoring model failed to fit even after preprocessing, stronger "
+            f"penalization and smaller Newton steps. Falling back to marginal KM "
+            f"censoring survival for IPCW (CoxPH). Last error: {last_error}"
+        )
+        return
 
     def _predict_censor_survival(self, X: pd.DataFrame, times: np.ndarray) -> np.ndarray:
         """Return G_hat(times_i | X_i) for matched rows/times."""
@@ -460,6 +589,9 @@ class IndependentEvaluator:
 
         if self._constant_censor_survival is not None:
             return np.full(X.shape[0], float(self._constant_censor_survival), dtype=float)
+
+        if self._km_censor_times is not None:
+            return self._km_predict(times, self._km_censor_times, self._km_censor_survival)
 
         # Use unique times to avoid relying on lifelines preserving duplicate
         # requested times. The result has shape (n_unique_times, n_rows).
@@ -481,6 +613,10 @@ class IndependentEvaluator:
         if self._constant_censor_survival is not None:
             return np.full((self.test_features.shape[0], target_times.shape[0]),
                            float(self._constant_censor_survival), dtype=float)
+
+        if self._km_censor_times is not None:
+            g = self._km_predict(target_times, self._km_censor_times, self._km_censor_survival)
+            return np.repeat(g.reshape(1, -1), repeats=self.test_features.shape[0], axis=0)
 
         surv = self._censor_model.predict_survival_function(self.test_features, times=target_times)
         values = np.asarray(surv.values, dtype=float)
