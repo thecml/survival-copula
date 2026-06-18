@@ -105,6 +105,9 @@ class RobustCoxPHSurvivalAnalysis:
 
     def predict(self, X):
         return self.model_.predict(self._prepare_predict_X(X))
+    
+    def score(self, X, y):
+        return self.model_.score(self._prepare_predict_X(X), y)
 
     def predict_survival_function(self, X, *args, **kwargs):
         return self.model_.predict_survival_function(
