@@ -57,14 +57,14 @@ def calculate_errors(results, dataset, strategy, model_names, metrics):
 
 if __name__ == "__main__":
     results = pd.read_csv(Path.joinpath(cfg.RESULTS_DIR, "semisynthetic_results.csv"))
-    
+
     strategy_names = {
         "original": "Original",
         "top_5": "Top-5",
         "top_10": "Top-10",
         "random_25": "Rand. 25\\%",
     }
-    
+
     metric_variants = [
         ("IBSIPCW", "IPCW (KM)"),
         ("IBSIPCW_CoxPH", "IPCW (CoxPH)"),
@@ -87,54 +87,69 @@ if __name__ == "__main__":
         "seer_liver",
         "seer_stomach",
     ]
-    
+
     model_names = ["coxph", "gbsa", "rsf", "deepsurv", "mtlr"]
 
     for strategy_i, (strategy_key, strategy_label) in enumerate(strategy_names.items()):
-        print(r"\multirow{4}{*}{\rotatebox{90}{" + strategy_label + r"}}")
+        print(r"\multirow{5}{*}{\rotatebox{90}{" + strategy_label + r"}}")
 
-        ipcw_values = None  # will hold the per-dataset baseline for this strategy
+        # Calculate every metric × dataset value before printing so that
+        # the minimum error can be bolded within each dataset and strategy.
+        values = {}
+        averages = {}
 
-        # Print rows for each metric variant
-        for metric_key, metric_label in metric_variants:
+        for metric_key, _ in metric_variants:
+            values[metric_key] = []
 
-            row_entries = [metric_label]
-            current_values = []   # values across datasets for this method/strategy
-
-            # Collect numbers across datasets
             for dataset in datasets:
-                mean_errors, std_errors = calculate_errors(
-                    results, dataset, strategy_key, model_names, [metric_key]
+                mean_errors, _ = calculate_errors(
+                    results,
+                    dataset,
+                    strategy_key,
+                    model_names,
+                    [metric_key],
                 )
+                values[metric_key].append(mean_errors[metric_key])
 
-                m = mean_errors[metric_key]
-                s = std_errors[metric_key]
+            averages[metric_key] = np.nanmean(values[metric_key])
 
-                current_values.append(m)
-                row_entries.append(f"{m:.3f}")
+        # Minimum error in each dataset column. All numerical ties are bolded.
+        value_matrix = np.asarray(
+            [values[metric_key] for metric_key, _ in metric_variants],
+            dtype=float,
+        )
+        best_by_dataset = np.nanmin(value_matrix, axis=0)
 
-            # Average column
-            avg_m = np.nanmean(current_values)
+        ipcw_values = values["IBSIPCW"]
+        avg_ipcw = averages["IBSIPCW"]
+
+        for metric_key, metric_label in metric_variants:
+            row_entries = [metric_label]
+
+            for dataset_i, value in enumerate(values[metric_key]):
+                formatted = f"{value:.3f}"
+                if np.isclose(value, best_by_dataset[dataset_i]):
+                    formatted = rf"\textbf{{{formatted}}}"
+                row_entries.append(formatted)
+
+            avg_m = averages[metric_key]
             row_entries.append(f"{avg_m:.3f}")
 
-            # Improvement vs IPCW
             if metric_key == "IBSIPCW":
-                # Baseline row: store baseline values, no improvement text
-                ipcw_values = current_values
                 improvement_text = ""
             else:
-                # Compute improvement using Average column only
-                avg_ipcw = np.nanmean(ipcw_values)
+                # Positive means more error than IPCW (worse);
+                # negative means less error than IPCW (better).
                 avg_impr = (avg_m - avg_ipcw) / avg_ipcw * 100.0
-
                 sign = "+" if avg_impr >= 0 else ""
                 color = "improvRed" if avg_impr >= 0 else "improvGreen"
-                improvement_text = rf" \textcolor{{{color}}}{{({sign}{avg_impr:.1f}\%)}}"
+                improvement_text = (
+                    rf" \textcolor{{{color}}}"
+                    rf"{{({sign}{avg_impr:.1f}\%)}}"
+                )
 
-            # Print row
             print("& " + " & ".join(row_entries) + improvement_text + r" \\")
 
-        # Midrule between strategy blocks
         if strategy_i < len(strategy_names) - 1:
             print(r"\midrule")
         else:
