@@ -4,11 +4,7 @@ import numpy as np
 import pandas as pd
 import config as cfg
 
-
-# ---------------------------------------------------------------------
 # Configuration
-# ---------------------------------------------------------------------
-
 DATASETS = [
     "whas", "metabric", "churn", "gbsg", "nacd", "flchain",
     "support", "employee", "mimic_all", "seer_brain",
@@ -61,11 +57,7 @@ METRICS = [
      r"\shortstack{Dep\\(CG)$^{\text{UW}}$}"),
 ]
 
-
-# ---------------------------------------------------------------------
 # Ranking helpers
-# ---------------------------------------------------------------------
-
 def resolve_metric_columns(results: pd.DataFrame):
     """Resolve metric keys from candidate column names."""
     resolved = []
@@ -88,7 +80,6 @@ def resolve_metric_columns(results: pd.DataFrame):
         resolved.append((chosen, body_label, header_label))
     return resolved
 
-
 def topk_soft(true_vals, metric_vals, k=3, min_hits=2):
     """Return True if at least min_hits of the true top-k are in the metric top-k."""
     true_rank = np.argsort(true_vals)
@@ -99,7 +90,6 @@ def topk_soft(true_vals, metric_vals, k=3, min_hits=2):
 
     hits = len(true_topk & metric_topk)
     return hits >= min_hits, hits
-
 
 def ranking_count(results: pd.DataFrame, dataset: str, metric_key: str):
     correct = 0
@@ -124,18 +114,13 @@ def ranking_count(results: pd.DataFrame, dataset: str, metric_key: str):
 
     return correct, total
 
-
 def fmt_score(correct: int, total: int, is_best: bool):
     value = f"{correct}/{total}"
     if is_best:
         return rf"\textbf{{{value}}}"
     return value
 
-
-# ---------------------------------------------------------------------
 # LaTeX printing
-# ---------------------------------------------------------------------
-
 def build_scores(results: pd.DataFrame, metric_specs):
     rows = []
     for dataset in DATASETS:
@@ -153,37 +138,49 @@ def build_scores(results: pd.DataFrame, metric_specs):
         rows.append((dataset, entries))
     return rows
 
-
 def print_latex_table(results: pd.DataFrame):
+    """Print a complete LaTeX table matching the manuscript layout."""
     metric_specs = resolve_metric_columns(results)
     rows = build_scores(results, metric_specs)
 
     print(r"\begin{table}[!t]")
     print(r"\centering")
     print(r"\caption{")
-    print(r"Ranking performance of random, independent and proposed dependent metrics on 12 datasets using the \emph{Original} feature strategy. The results show how often each metric correctly identified the top-3 survival learners according to the oracle IBS metric across 10 experiments per dataset. Higher is better.}")
+    print(
+        r"Ranking performance of random, independent and proposed dependent "
+        r"metrics on 12 datasets using the \emph{Original} feature strategy. "
+        r"The results show how often each metric correctly identified the "
+        r"top-3 survival learners according to the oracle IBS metric across "
+        r"10 experiments per dataset. Higher is better.}"
+    )
     print(r"\label{tab:ranking_results}")
-    print(r"\resizebox{\columnwidth}{!}{%")
+    print(r"\resizebox{1\columnwidth}{!}{")
     print(r"\begin{tabular}{l|ccccc}")
     print(r"\toprule")
-
-    header = ["Dataset"] + [header_label for _, _, header_label in metric_specs]
-    print(" & ".join(header) + r" \\")
+    print(r"Dataset")
+    for i, (_, _, header_label) in enumerate(metric_specs):
+        ending = r" \\" if i == len(metric_specs) - 1 else ""
+        print(f"& {header_label}{ending}")
     print(r"\midrule")
 
-    for dataset, entries in rows:
-        ratios = np.array([e["ratio"] for e in entries], dtype=float)
-        best = np.nanmax(ratios)
-        out = [DATASET_LABELS.get(dataset, dataset)]
-        for e in entries:
-            out.append(fmt_score(e["correct"], e["total"], np.isclose(e["ratio"], best)))
-        print(" & ".join(out) + r" \\")
+    for row_i, (dataset, entries) in enumerate(rows):
+        ratios = np.asarray([entry["ratio"] for entry in entries], dtype=float)
+        best_ratio = np.nanmax(ratios)
+
+        print(DATASET_LABELS.get(dataset, dataset))
+        for metric_i, entry in enumerate(entries):
+            is_best = np.isclose(entry["ratio"], best_ratio)
+            score = fmt_score(entry["correct"], entry["total"], is_best)
+            ending = r" \\" if metric_i == len(entries) - 1 else ""
+            print(f"& {score}{ending}")
+
+        if row_i < len(rows) - 1:
+            print()
 
     print(r"\bottomrule")
     print(r"\end{tabular}%")
     print(r"}")
     print(r"\end{table}")
-
 
 if __name__ == "__main__":
     results_path = Path(cfg.RESULTS_DIR) / "semisynthetic_results.csv"

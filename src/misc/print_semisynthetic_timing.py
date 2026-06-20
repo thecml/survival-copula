@@ -38,6 +38,7 @@ DATASET_LABEL = {
 # IBS variants only
 METRIC_VARIANTS = [
     ("IBSIPCW", "IPCW", "IBSIPCWTime"),
+    ("IBSIPCW", "IPCW", "IBSIPCWTime"),
     ("IBSIndepBG", "Dep (KM)", "IBSIndepBGTime"),
     ("IBSDepBG", "Dep (CG)", "IBSDepBGTime"),
     ("IBSDepBGUW", r"Dep (CG)$^{\text{UW}}$", "IBSDepBGUWTime"),
