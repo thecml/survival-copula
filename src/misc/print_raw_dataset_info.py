@@ -3,8 +3,8 @@ import numpy as np
 from data_loader import get_data_loader
 from utility.preprocessor import Preprocessor
 
-datasets = ["metabric", "mimic_all", "mimic_hospital",
-            "seer_brain", "seer_liver", "seer_stomach"]
+datasets = ["metabric", "gbsg", "nacd", "support", "flchain", "whas",
+            "employee", "churn", "mimic_all", "seer_brain", "seer_liver", "seer_stomach"]
 dataset_info = []
 
 # Iterate over datasets and axes

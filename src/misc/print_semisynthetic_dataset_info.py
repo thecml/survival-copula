@@ -5,8 +5,8 @@ from data_loader import get_data_loader
 from strategies import combine_data_with_censor, make_synthetic_censoring
 from utility.preprocessor import Preprocessor
 
-datasets = ["gbsg", "metabric", "mimic", "nacd", "support", "whas",
-            "seer_brain", "seer_breast", "seer_liver", "seer_prostate", "seer_stomach"]
+datasets = ["metabric", "gbsg", "nacd", "support", "flchain", "whas",
+            "employee", "churn", "mimic_all", "seer_brain", "seer_liver", "seer_stomach"]
 dataset_info = []
 
 # Iterate over datasets and axes
